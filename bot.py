@@ -8,7 +8,7 @@ from telegram.error import Conflict
 
 # تكوين نظام تسجيل الأحداث
 logging.basicConfig(level=logging.INFO)
-
+ 
 # تحديد مسار التنزيل (داخل المشروع بدلاً من /tmp/)
 def get_download_path():
     download_path = os.path.join(os.getcwd(), 'downloads')
