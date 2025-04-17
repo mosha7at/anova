@@ -12,7 +12,7 @@ def get_download_path():
         return '/storage/emulated/0/Download/'
     elif platform == "win32":  # إذا كان النظام Windows
         return os.path.expanduser("~/Downloads/")
-    else:  # لأنظمة أخرى مثل Linux وmacOS
+    else:  # لأنظمة أخرى مثل Linux وmacOS (Railway)
         return "/root/Downloads/"  # المسار الافتراضي على Railway
 
 # دالة تنزيل الملفات باستخدام yt-dlp مع تحديد موقع FFmpeg
@@ -154,9 +154,13 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 # نقطة البداية
 def main():
-    # أدخل API Token الخاص بك هنا
-    API_TOKEN = os.getenv("8102684495:AAEt7tulbJnCy9xIos9b5Kf9OwwGqf3UqMI")
+    # قراءة API Token من المتغيرات البيئية
+    API_TOKEN = os.getenv("API_TOKEN")
+    if not API_TOKEN:
+        print("ERROR: API_TOKEN is not set!")
+        return
 
+    print("Starting bot...")
     # إنشاء التطبيق
     app = Application.builder().token(API_TOKEN).build()
 
@@ -165,7 +169,6 @@ def main():
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
 
     # بدء البوت باستخدام Polling
-    print("Starting bot...")
     app.run_polling()
 
 if __name__ == '__main__':
