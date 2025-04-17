@@ -3,6 +3,7 @@ import yt_dlp
 import time
 from telegram import Update, ReplyKeyboardMarkup, ReplyKeyboardRemove
 from telegram.ext import Application, CommandHandler, MessageHandler, filters, ContextTypes
+import asyncio
 
 # إعداد دالة لتحديد مسار التنزيل (استخدام /tmp على Railway)
 def get_download_path():
@@ -43,11 +44,18 @@ def download_media(url, media_type='video', video_quality=None):
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
             print(f"Downloading {media_type} from {url}...")
             info_dict = ydl.extract_info(url, download=True)
-            file_name = ydl.prepare_filename(info_dict)
 
-            # إصلاح مسار الملف إذا تم تغيير الامتداد بواسطة postprocessor
-            if media_type == 'audio':
-                file_name = os.path.splitext(file_name)[0] + '.mp3'
+            # تقصير اسم الملف إلى 50 حرفًا كحد أقصى
+            file_name = ydl.prepare_filename(info_dict)
+            shortened_file_name = os.path.join(
+                os.path.dirname(file_name),
+                f"{os.path.splitext(os.path.basename(file_name))[0][:50]}{os.path.splitext(file_name)[1]}"
+            )
+
+            # إعادة تسمية الملف إذا كان طويلًا
+            if file_name != shortened_file_name:
+                os.rename(file_name, shortened_file_name)
+                file_name = shortened_file_name
 
             print(f"File downloaded successfully to {file_name}")
             return file_name  # إرجاع مسار الملف
@@ -81,7 +89,6 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     text = update.message.text.strip()
 
     if bot_state.url is None:
-        # قبول أي نص كرابط دون التحقق من صحته
         bot_state.url = text
         keyboard = [
             ["🎧 Audio", "🎬 Video"]
@@ -145,6 +152,14 @@ async def subscribers(update: Update, context: ContextTypes.DEFAULT_TYPE):
     except Exception as e:
         await update.message.reply_text(f"Failed to fetch subscriber count: {e}")
 
+# إيقاف Webhook إذا كان قيد التشغيل
+async def stop_webhook_if_running(application):
+    try:
+        await application.bot.delete_webhook()
+        print("Webhook stopped successfully.")
+    except Exception as e:
+        print(f"Failed to stop webhook: {e}")
+
 # نقطة البداية
 def main():
     # أدخل API Token الخاص بك هنا (من متغيرات البيئة)
@@ -153,6 +168,9 @@ def main():
         raise ValueError("API_TOKEN is not set in environment variables.")
 
     application = Application.builder().token(API_TOKEN).build()
+
+    # إيقاف Webhook إذا كان قيد التشغيل
+    asyncio.run(stop_webhook_if_running(application))
 
     # إضافة معالجات الأوامر
     application.add_handler(CommandHandler("start", start))
