@@ -51,6 +51,10 @@ def download_media(url, media_type='video', video_quality=None):
 
             print(f"File downloaded successfully to {file_name}")
             return file_name  # إرجاع مسار الملف
+    except yt_dlp.utils.DownloadError as e:
+        if "Facebook" in str(e):
+            return "Error: Failed to download from Facebook. Make sure the link is valid and accessible."
+        return f"Error during download: {e}"
     except Exception as e:
         return f"Error during download: {e}"
 
@@ -72,7 +76,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         reply_markup=ReplyKeyboardRemove()
     )
 
-# استجابة لإدخال الرسائل
+# معالجة الرسائل النصية
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     text = update.message.text.strip()
 
@@ -132,6 +136,15 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         else:
             await update.message.reply_text("Invalid video quality choice. Please select a valid option.")
 
+# استجابة لأمر /subscribers
+async def subscribers(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    chat_id = update.message.chat_id
+    try:
+        member_count = await context.bot.get_chat_member_count(chat_id)
+        await update.message.reply_text(f"Total subscribers: {member_count}")
+    except Exception as e:
+        await update.message.reply_text(f"Failed to fetch subscriber count: {e}")
+
 # نقطة البداية
 def main():
     # أدخل API Token الخاص بك هنا (من متغيرات البيئة)
@@ -143,6 +156,7 @@ def main():
 
     # إضافة معالجات الأوامر
     application.add_handler(CommandHandler("start", start))
+    application.add_handler(CommandHandler("subscribers", subscribers))  # إضافة معالج /subscribers
     application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
 
     # بدء البوت
