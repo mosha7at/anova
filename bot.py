@@ -35,6 +35,7 @@ def download_media(url, media_type='video', video_quality=None):
             ydl_opts = {
                 'format': selected_format,
                 'outtmpl': os.path.join(DOWNLOAD_PATH, f'video_{timestamp}.%(ext)s'),
+                'cookiefile': 'cookies.txt',  # ملف الكوكيز (اختياري)
             }
         else:
             return "Invalid media type."
@@ -54,6 +55,9 @@ def download_media(url, media_type='video', video_quality=None):
                 return file_name
 
     except Exception as e:
+        # معالجة الأخطاء الناتجة عن الروابط غير المدعومة
+        if "Cannot parse data" in str(e) or "Unsupported URL" in str(e):
+            return "Error: Unable to download the media. Please ensure the link is valid and try again later."
         return f"Error during download: {e}"
 
 # حالة البوت
@@ -98,7 +102,11 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await update.message.reply_text("⏳ Downloading audio... Please wait.")
             file_path = download_media(bot_state.url, media_type='audio')
             if file_path.startswith("Error"):
-                await update.message.reply_text("❌ Failed to download the media. Please check the link and try again.")
+                await update.message.reply_text(
+                    "❌ Failed to download the media. "
+                    "Please ensure the link is valid and try again later. "
+                    "If the issue persists, the video may be private or not supported."
+                )
             else:
                 if os.path.exists(file_path):
                     await update.message.reply_text("✅ Audio downloaded successfully!")
@@ -130,7 +138,11 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await update.message.reply_text(f"⏳ Downloading video ({selected_quality})... Please wait.")
             file_path = download_media(bot_state.url, media_type='video', video_quality=bot_state.video_quality)
             if file_path.startswith("Error"):
-                await update.message.reply_text("❌ Failed to download the media. Please check the link and try again.")
+                await update.message.reply_text(
+                    "❌ Failed to download the media. "
+                    "Please ensure the link is valid and try again later. "
+                    "If the issue persists, the video may be private or not supported."
+                )
             else:
                 if os.path.exists(file_path):
                     await update.message.reply_text(f"✅ Video ({selected_quality}) downloaded successfully!")
