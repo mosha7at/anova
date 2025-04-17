@@ -25,16 +25,16 @@ def download_media(url, media_type='video', video_quality=None):
             }
         elif media_type == 'video':  # فيديو
             format_map = {
-                '144p': '144',
-                '240p': '240',
-                '360p': '360',
-                '480p': '480',
-                '720p': '720',
-                '1080p': '1080',
+                '144p': 'bestvideo[height<=144]+bestaudio/best',
+                '240p': 'bestvideo[height<=240]+bestaudio/best',
+                '360p': 'bestvideo[height<=360]+bestaudio/best',
+                '480p': 'bestvideo[height<=480]+bestaudio/best',
+                '720p': 'bestvideo[height<=720]+bestaudio/best',
+                '1080p': 'bestvideo[height<=1080]+bestaudio/best',
             }
-            selected_quality = format_map.get(video_quality, 'best')
+            selected_format = format_map.get(video_quality, 'bestvideo+bestaudio/best')
             ydl_opts = {
-                'format': f'bestvideo[height<={selected_quality}]+bestaudio/best',
+                'format': selected_format,
                 'outtmpl': os.path.join(save_path, f'%(title)s_{timestamp}.%(ext)s'),
             }
         else:
