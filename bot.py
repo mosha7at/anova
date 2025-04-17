@@ -17,7 +17,7 @@ def download_media(url, media_type='video', video_quality=None):
         if media_type == 'audio':  # صوت
             ydl_opts = {
                 'format': 'bestaudio/best',
-                'outtmpl': os.path.join(save_path, f'%(title)s_{timestamp}.%(ext)s'),
+                'outtmpl': os.path.join(save_path, f'%(id)s_{timestamp}.%(ext)s'),  # استخدام معرف الفيديو فقط
                 'postprocessors': [{
                     'key': 'FFmpegExtractAudio',
                     'preferredcodec': 'mp3',
@@ -36,7 +36,7 @@ def download_media(url, media_type='video', video_quality=None):
             selected_format = format_map.get(video_quality, 'bestvideo+bestaudio/best')
             ydl_opts = {
                 'format': selected_format,
-                'outtmpl': os.path.join(save_path, f'%(title)s_{timestamp}.%(ext)s'),
+                'outtmpl': os.path.join(save_path, f'%(id)s_{timestamp}.%(ext)s'),  # استخدام معرف الفيديو فقط
             }
         else:
             return "Invalid media type."
@@ -45,20 +45,10 @@ def download_media(url, media_type='video', video_quality=None):
             print(f"Downloading {media_type} from {url}...")
             info_dict = ydl.extract_info(url, download=True)
 
-            # تقصير اسم الملف إلى 50 حرفًا كحد أقصى
+            # إرجاع مسار الملف بعد التنزيل
             file_name = ydl.prepare_filename(info_dict)
-            shortened_file_name = os.path.join(
-                os.path.dirname(file_name),
-                f"{os.path.splitext(os.path.basename(file_name))[0][:50]}{os.path.splitext(file_name)[1]}"
-            )
-
-            # إعادة تسمية الملف إذا كان طويلًا
-            if file_name != shortened_file_name:
-                os.rename(file_name, shortened_file_name)
-                file_name = shortened_file_name
-
             print(f"File downloaded successfully to {file_name}")
-            return file_name  # إرجاع مسار الملف
+            return file_name
     except yt_dlp.utils.DownloadError as e:
         if "Facebook" in str(e):
             return "Error: Failed to download from Facebook. Make sure the link is valid and accessible."
