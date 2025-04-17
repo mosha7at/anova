@@ -1,40 +1,21 @@
 import os
 import yt_dlp
-import time
-import logging
-from telegram import Update, ReplyKeyboardMarkup, ReplyKeyboardRemove
+from telegram import Update, ReplyKeyboardMarkup
 from telegram.ext import Application, CommandHandler, MessageHandler, filters, ContextTypes
-from telegram.error import Conflict
 
-# تكوين نظام تسجيل الأحداث
-logging.basicConfig(level=logging.INFO)
- 
 # تحديد مسار التنزيل (داخل المشروع بدلاً من /tmp/)
-def get_download_path():
-    download_path = os.path.join(os.getcwd(), 'downloads')
-    if not os.path.exists(download_path):
-        os.makedirs(download_path)
-    return download_path
-
-# دالة تنظيف الملفات القديمة
-def clean_old_files(download_path, max_age_seconds=3600):
-    """حذف الملفات القديمة التي تتجاوز عمرها max_age_seconds."""
-    now = time.time()
-    for filename in os.listdir(download_path):
-        file_path = os.path.join(download_path, filename)
-        if os.path.isfile(file_path) and (now - os.path.getmtime(file_path)) > max_age_seconds:
-            os.remove(file_path)
-            logging.info(f"Deleted old file: {file_path}")
+DOWNLOAD_PATH = os.path.join(os.getcwd(), 'downloads')
+if not os.path.exists(DOWNLOAD_PATH):
+    os.makedirs(DOWNLOAD_PATH)
 
 # دالة تنزيل الملفات باستخدام yt-dlp
 def download_media(url, media_type='video', video_quality=None):
-    save_path = get_download_path()
     timestamp = time.strftime("%Y%m%d-%H%M%S")
     try:
         if media_type == 'audio':
             ydl_opts = {
                 'format': 'bestaudio/best',
-                'outtmpl': os.path.join(save_path, f'%(id)s_{timestamp}.%(ext)s'),
+                'outtmpl': os.path.join(DOWNLOAD_PATH, f'audio_{timestamp}.%(ext)s'),
                 'postprocessors': [{
                     'key': 'FFmpegExtractAudio',
                     'preferredcodec': 'mp3',
@@ -52,32 +33,27 @@ def download_media(url, media_type='video', video_quality=None):
             selected_format = format_map.get(video_quality, 'bestvideo+bestaudio/best')
             ydl_opts = {
                 'format': selected_format,
-                'outtmpl': os.path.join(save_path, f'%(id)s_{timestamp}.%(ext)s'),
+                'outtmpl': os.path.join(DOWNLOAD_PATH, f'video_{timestamp}.%(ext)s'),
             }
         else:
             return "Invalid media type."
 
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
             info_dict = ydl.extract_info(url, download=True)
-            original_file = ydl.prepare_filename(info_dict)
+            file_name = ydl.prepare_filename(info_dict)
 
+            # إذا كان نوع الملف صوت، فسنعيد اسم الملف بعد التحويل
             if media_type == 'audio':
-                converted_file = os.path.splitext(original_file)[0] + '.mp3'
+                converted_file = os.path.splitext(file_name)[0] + '.mp3'
                 if os.path.exists(converted_file):
-                    os.remove(original_file)  # حذف الملف الأصلي
                     return converted_file
                 else:
-                    logging.error("Conversion failed. Converted file not found.")
                     return "Error: Conversion failed."
             else:
-                return original_file
+                return file_name
 
-    except yt_dlp.utils.DownloadError as e:
-        logging.error(f"Download error: {e}")
-        return f"Error during download: {e}"
     except Exception as e:
-        logging.error(f"Unexpected error: {e}")
-        return f"Error: {e}"
+        return f"Error during download: {e}"
 
 # حالة البوت
 class BotState:
@@ -92,9 +68,8 @@ bot_state = BotState()
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     bot_state.__init__()  # إعادة تهيئة الحالة
     await update.message.reply_text(
-        "Welcome to the Multi-Platform Media Downloader!\n\n"
-        "Please enter the URL of the media you want to download:",
-        reply_markup=ReplyKeyboardRemove()
+        "Welcome to the Media Downloader!\n\n"
+        "Please enter the URL of the media you want to download:"
     )
 
 # معالجة الرسائل النصية
@@ -103,9 +78,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     if bot_state.url is None:
         bot_state.url = text
-        keyboard = [
-            ["🎧 Audio", "🎬 Video"]
-        ]
+        keyboard = [["🎧 Audio", "🎬 Video"]]
         reply_markup = ReplyKeyboardMarkup(keyboard, resize_keyboard=True, one_time_keyboard=True)
         await update.message.reply_text("Choose media type:", reply_markup=reply_markup)
     elif bot_state.media_type is None:
@@ -116,16 +89,10 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
             if file_path.startswith("Error"):
                 await update.message.reply_text("❌ Failed to download the media. Please check the link and try again.")
             else:
-                # التحقق من وجود الملف قبل فتحه
                 if os.path.exists(file_path):
-                    # التحقق من حجم الملف
-                    file_size = os.path.getsize(file_path)
-                    if file_size > 50 * 1024 * 1024:  # أكثر من 50 ميجابايت
-                        await update.message.reply_text("⚠️ File size is too large. Cannot send via Telegram.")
-                    else:
-                        await update.message.reply_text("✅ Audio downloaded successfully!")
-                        with open(file_path, 'rb') as file:
-                            await update.message.reply_audio(file)
+                    await update.message.reply_text("✅ Audio downloaded successfully!")
+                    with open(file_path, 'rb') as file:
+                        await update.message.reply_audio(file)
                     os.remove(file_path)  # حذف الملف بعد الإرسال
                 else:
                     await update.message.reply_text("❌ File not found after download. Please try again.")
@@ -157,16 +124,10 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
             if file_path.startswith("Error"):
                 await update.message.reply_text("❌ Failed to download the media. Please check the link and try again.")
             else:
-                # التحقق من وجود الملف قبل فتحه
                 if os.path.exists(file_path):
-                    # التحقق من حجم الملف
-                    file_size = os.path.getsize(file_path)
-                    if file_size > 50 * 1024 * 1024:  # أكثر من 50 ميجابايت
-                        await update.message.reply_text("⚠️ File size is too large. Cannot send via Telegram.")
-                    else:
-                        await update.message.reply_text(f"✅ Video ({text}) downloaded successfully!")
-                        with open(file_path, 'rb') as file:
-                            await update.message.reply_video(file)
+                    await update.message.reply_text(f"✅ Video ({text}) downloaded successfully!")
+                    with open(file_path, 'rb') as file:
+                        await update.message.reply_video(file)
                     os.remove(file_path)  # حذف الملف بعد الإرسال
                 else:
                     await update.message.reply_text("❌ File not found after download. Please try again.")
@@ -174,32 +135,13 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         else:
             await update.message.reply_text("Invalid video quality choice. Please select a valid option.")
 
-# إيقاف Webhook إذا كان قيد التشغيل
-async def stop_webhook_if_running(application):
-    try:
-        await application.bot.delete_webhook()
-        logging.info("Webhook stopped successfully.")
-    except Exception as e:
-        logging.error(f"Failed to stop webhook: {e}")
-
 # نقطة البداية
 def main():
-    # أدخل API Token الخاص بك هنا (من متغيرات البيئة)
     API_TOKEN = os.getenv('API_TOKEN')
     if not API_TOKEN:
         raise ValueError("API_TOKEN is not set in environment variables.")
 
-    # تنظيف الملفات القديمة عند بدء البرنامج
-    clean_old_files(get_download_path())
-
-    # إنشاء حلقة حدث يدوياً
-    loop = asyncio.new_event_loop()
-    asyncio.set_event_loop(loop)
-
     application = Application.builder().token(API_TOKEN).build()
-
-    # إيقاف Webhook إذا كان قيد التشغيل
-    loop.run_until_complete(stop_webhook_if_running(application))
 
     # إضافة معالجات الأوامر
     application.add_handler(CommandHandler("start", start))
