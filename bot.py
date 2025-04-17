@@ -1,6 +1,7 @@
 import os
 import yt_dlp
 import time
+import subprocess
 from telegram import Update, ReplyKeyboardMarkup, ReplyKeyboardRemove
 from telegram.ext import Application, CommandHandler, MessageHandler, filters, ContextTypes
 
@@ -39,6 +40,7 @@ def download_media(url, media_type='video', video_quality=None):
     try:
         # التحقق من مصدر الرابط
         is_tiktok = 'tiktok.com' in url.lower()
+        is_facebook = 'facebook.com' in url.lower() or 'fb.watch' in url.lower()
 
         if media_type == 'audio':
             ydl_opts = {
@@ -56,9 +58,34 @@ def download_media(url, media_type='video', video_quality=None):
             }
         elif media_type == 'video':
             if is_tiktok:
-                # TikTok لا يدعم اختيار الجودة بشكل مباشر
+                # TikTok: تنزيل الفيديو بالجودة الافتراضية (الأعلى)
                 ydl_opts = {
-                    'format': 'bestvideo+bestaudio/best',  # الجودة الافتراضية (الأعلى)
+                    'format': 'bestvideo+bestaudio/best',
+                    'outtmpl': os.path.join(DOWNLOAD_PATH, f'video_{timestamp}.%(ext)s'),
+                    'merge_output_format': 'mp4',
+                    'logger': DownloadLogger(),
+                    'progress_hooks': [progress_hook],
+                    'retries': 5,
+                    'fragment_retries': 5,
+                    'socket_timeout': 10,
+                }
+            elif is_facebook:
+                # Facebook: استخراج الجودات المتاحة
+                with yt_dlp.YoutubeDL() as ydl:
+                    info_dict = ydl.extract_info(url, download=False)
+                    formats = info_dict.get('formats', [])
+                    available_qualities = set()
+                    for fmt in formats:
+                        if fmt.get('height'):
+                            available_qualities.add(fmt['height'])
+
+                    # تحديد الجودة الأقرب
+                    requested_height = int(video_quality.replace("p", ""))
+                    closest_quality = min(available_qualities, key=lambda x: abs(x - requested_height))
+                    selected_format = f"bestvideo[height<={closest_quality}]+bestaudio/best"
+
+                ydl_opts = {
+                    'format': selected_format,
                     'outtmpl': os.path.join(DOWNLOAD_PATH, f'video_{timestamp}.%(ext)s'),
                     'merge_output_format': 'mp4',
                     'logger': DownloadLogger(),
@@ -92,6 +119,7 @@ def download_media(url, media_type='video', video_quality=None):
                     'fragment_retries': 5,
                     'socket_timeout': 10,
                 }
+
         else:
             return "Invalid media type."
 
@@ -106,6 +134,15 @@ def download_media(url, media_type='video', video_quality=None):
                 else:
                     return "Error: Conversion failed."
             else:
+                # TikTok: تقليل الدقة إذا كانت الجودة المطلوبة أقل
+                if is_tiktok and video_quality:
+                    requested_height = int(video_quality.replace("p", ""))
+                    original_height = info_dict.get('height', 0)
+                    if original_height > requested_height:
+                        reduced_file = os.path.splitext(file_name)[0] + f"_reduced_{video_quality}.mp4"
+                        reduce_video_quality(file_name, reduced_file, video_quality)
+                        os.remove(file_name)  # حذف الملف الأصلي
+                        return reduced_file
                 return file_name
 
     except Exception as e:
