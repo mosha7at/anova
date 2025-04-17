@@ -4,10 +4,25 @@ import time
 from telegram import Update, ReplyKeyboardMarkup, ReplyKeyboardRemove
 from telegram.ext import Application, CommandHandler, MessageHandler, filters, ContextTypes
 
-# تحديد مسار التنزيل (داخل المشروع بدلاً من /tmp/)
+# تحديد مسار التنزيل
 DOWNLOAD_PATH = os.path.join(os.getcwd(), 'downloads')
 if not os.path.exists(DOWNLOAD_PATH):
     os.makedirs(DOWNLOAD_PATH)
+
+# دالة لعرض تقدم التنزيل
+class DownloadLogger:
+    def debug(self, msg):
+        pass
+
+    def warning(self, msg):
+        pass
+
+    def error(self, msg):
+        print(f"Error: {msg}")
+
+def progress_hook(d):
+    if d['status'] == 'downloading':
+        print(f"Downloading: {d['_percent_str']}")
 
 # دالة تنزيل الملفات باستخدام yt-dlp
 def download_media(url, media_type='video', video_quality=None):
@@ -21,6 +36,11 @@ def download_media(url, media_type='video', video_quality=None):
                     'key': 'FFmpegExtractAudio',
                     'preferredcodec': 'mp3',
                 }],
+                'logger': DownloadLogger(),
+                'progress_hooks': [progress_hook],
+                'retries': 5,
+                'fragment_retries': 5,
+                'socket_timeout': 10,
             }
         elif media_type == 'video':
             format_map = {
@@ -35,6 +55,12 @@ def download_media(url, media_type='video', video_quality=None):
             ydl_opts = {
                 'format': selected_format,
                 'outtmpl': os.path.join(DOWNLOAD_PATH, f'video_{timestamp}.%(ext)s'),
+                'merge_output_format': 'mp4',
+                'logger': DownloadLogger(),
+                'progress_hooks': [progress_hook],
+                'retries': 5,
+                'fragment_retries': 5,
+                'socket_timeout': 10,
             }
         else:
             return "Invalid media type."
@@ -43,7 +69,6 @@ def download_media(url, media_type='video', video_quality=None):
             info_dict = ydl.extract_info(url, download=True)
             file_name = ydl.prepare_filename(info_dict)
 
-            # إذا كان نوع الملف صوت، فسنعيد اسم الملف بعد التحويل
             if media_type == 'audio':
                 converted_file = os.path.splitext(file_name)[0] + '.mp3'
                 if os.path.exists(converted_file):
