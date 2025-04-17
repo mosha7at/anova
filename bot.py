@@ -40,6 +40,11 @@ async def download_media_with_quality_choice(update: Update, context: ContextTyp
                     if format_note and resolution:
                         quality_options.append(f"{format_note} ({resolution})")
                 
+                # التحقق مما إذا كانت هناك جودات متاحة
+                if not quality_options:
+                    await update.message.reply_text("❌ No available qualities found for this video.")
+                    return
+                
                 # عرض الجودات كقائمة منبثقة
                 keyboard = [quality_options[i:i + 3] for i in range(0, len(quality_options), 3)]
                 reply_markup = ReplyKeyboardMarkup(keyboard, resize_keyboard=True, one_time_keyboard=True)
@@ -75,71 +80,6 @@ async def download_media_with_quality_choice(update: Update, context: ContextTyp
     except Exception as e:
         await update.message.reply_text(f"❌ Error during download: {e}")
 
-# دالة تنزيل الوسائط الأخرى (بدون جودة)
-async def download_media(update: Update, context: ContextTypes.DEFAULT_TYPE, url, media_type='audio'):
-    try:
-        timestamp = time.strftime("%Y%m%d-%H%M%S")
-        if media_type == 'audio':
-            ydl_opts = {
-                'format': 'bestaudio/best',
-                'outtmpl': os.path.join(DOWNLOAD_PATH, f'audio_{timestamp}.%(ext)s'),
-                'postprocessors': [{
-                    'key': 'FFmpegExtractAudio',
-                    'preferredcodec': 'mp3',
-                }],
-            }
-        elif media_type == 'photo':
-            ydl_opts = {
-                'format': 'best',
-                'outtmpl': os.path.join(DOWNLOAD_PATH, f'photo_{timestamp}.%(ext)s'),
-            }
-        elif media_type == 'file':
-            ydl_opts = {
-                'format': 'best',
-                'outtmpl': os.path.join(DOWNLOAD_PATH, f'file_{timestamp}.%(ext)s'),
-            }
-        elif media_type == 'playlist':
-            ydl_opts = {
-                'format': 'bestvideo+bestaudio/best',
-                'outtmpl': os.path.join(DOWNLOAD_PATH, f'playlist_{timestamp}/%(title)s.%(ext)s'),
-                'merge_output_format': 'mp4',
-                'noplaylist': False,  # تمكين تنزيل القوائم
-            }
-        elif media_type == 'direct_link':
-            ydl_opts = {
-                'format': 'best',
-                'outtmpl': os.path.join(DOWNLOAD_PATH, f'direct_{timestamp}.%(ext)s'),
-            }
-        else:
-            return "Invalid media type."
-
-        # تنفيذ عملية التنزيل
-        with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-            info_dict = ydl.extract_info(url, download=True)
-            file_name = ydl.prepare_filename(info_dict)
-            if media_type == 'audio':
-                converted_file = os.path.splitext(file_name)[0] + '.mp3'
-                if os.path.exists(converted_file):
-                    return converted_file
-                else:
-                    return "Error: Conversion failed."
-            elif media_type == 'playlist':
-                return "✅ Playlist downloaded successfully!"
-            else:
-                return file_name
-
-    except Exception as e:
-        return f"Error during download: {e}"
-
-# استجابة لأمر /start
-async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    bot_state.__init__()  # إعادة تهيئة الحالة
-    await update.message.reply_text(
-        "Welcome to the Media Downloader!\n"
-        "Please enter the URL of the media you want to download:",
-        reply_markup=ReplyKeyboardRemove()
-    )
-
 # معالجة الرسائل النصية
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     text = update.message.text.strip()
@@ -160,76 +100,9 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text("Choose media type:", reply_markup=reply_markup)
     
     elif bot_state.media_type is None:
-        if text.lower() in ['🎧 audio', 'audio']:
-            bot_state.media_type = 'audio'
-            file_path = await download_media(update, context, bot_state.url, media_type='audio')
-            if file_path.startswith("Error"):
-                await update.message.reply_text("❌ Failed to download the media. Please check the link and try again.")
-            else:
-                if os.path.exists(file_path):
-                    await update.message.reply_text("✅ Audio downloaded successfully!")
-                    with open(file_path, 'rb') as file:
-                        await update.message.reply_audio(file)
-                    os.remove(file_path)  # حذف الملف بعد الإرسال
-                else:
-                    await update.message.reply_text("❌ File not found after download. Please try again.")
-            bot_state.__init__()
-        
-        elif text.lower() in ['🎬 video', 'video']:
+        if text.lower() in ['🎬 video', 'video']:
             bot_state.media_type = 'video'
             await download_media_with_quality_choice(update, context, bot_state.url, media_type='video')
-        
-        elif text.lower() in ['🖼️ photo', 'photo']:
-            bot_state.media_type = 'photo'
-            file_path = await download_media(update, context, bot_state.url, media_type='photo')
-            if file_path.startswith("Error"):
-                await update.message.reply_text("❌ Failed to download the media. Please check the link and try again.")
-            else:
-                if os.path.exists(file_path):
-                    await update.message.reply_text("✅ Photo downloaded successfully!")
-                    with open(file_path, 'rb') as file:
-                        await update.message.reply_photo(file)
-                    os.remove(file_path)  # حذف الملف بعد الإرسال
-                else:
-                    await update.message.reply_text("❌ File not found after download. Please try again.")
-            bot_state.__init__()
-        
-        elif text.lower() in ['📄 file', 'file']:
-            bot_state.media_type = 'file'
-            file_path = await download_media(update, context, bot_state.url, media_type='file')
-            if file_path.startswith("Error"):
-                await update.message.reply_text("❌ Failed to download the media. Please check the link and try again.")
-            else:
-                if os.path.exists(file_path):
-                    await update.message.reply_text("✅ File downloaded successfully!")
-                    with open(file_path, 'rb') as file:
-                        await update.message.reply_document(file)
-                    os.remove(file_path)  # حذف الملف بعد الإرسال
-                else:
-                    await update.message.reply_text("❌ File not found after download. Please try again.")
-            bot_state.__init__()
-        
-        elif text.lower() in ['🎵 playlist', 'playlist']:
-            bot_state.media_type = 'playlist'
-            result = await download_media(update, context, bot_state.url, media_type='playlist')
-            await update.message.reply_text(result)
-            bot_state.__init__()
-        
-        elif text.lower() in ['🔗 direct link', 'direct link']:
-            bot_state.media_type = 'direct_link'
-            file_path = await download_media(update, context, bot_state.url, media_type='direct_link')
-            if file_path.startswith("Error"):
-                await update.message.reply_text("❌ Failed to download the media. Please check the link and try again.")
-            else:
-                if os.path.exists(file_path):
-                    await update.message.reply_text("✅ Direct link downloaded successfully!")
-                    with open(file_path, 'rb') as file:
-                        await update.message.reply_document(file)
-                    os.remove(file_path)  # حذف الملف بعد الإرسال
-                else:
-                    await update.message.reply_text("❌ File not found after download. Please try again.")
-            bot_state.__init__()
-        
         else:
             await update.message.reply_text("Invalid choice. Please choose a valid option.")
     
