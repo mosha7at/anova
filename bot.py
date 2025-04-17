@@ -15,8 +15,7 @@ if not os.path.exists(DOWNLOAD_PATH):
 class BotState:
     def __init__(self):
         self.url = None
-        self.media_type = None
-        self.video_quality = None
+        self.media_type = None  # audio, video, photo, file
 
 bot_state = BotState()
 
@@ -24,7 +23,7 @@ bot_state = BotState()
 progress_queue = queue.Queue()
 
 # دالة تنزيل الوسائط مع رسائل تفاعلية
-async def download_media_with_progress(update: Update, context: ContextTypes.DEFAULT_TYPE, url, media_type='video', video_quality=None):
+async def download_media_with_progress(update: Update, context: ContextTypes.DEFAULT_TYPE, url, media_type='video'):
     timestamp = time.strftime("%Y%m%d-%H%M%S")
     progress_message = None
 
@@ -46,20 +45,22 @@ async def download_media_with_progress(update: Update, context: ContextTypes.DEF
                 'progress_hooks': [progress_hook],
             }
         elif media_type == 'video':
-            # استخدام الجودة المحددة أو الافتراضية
-            format_map = {
-                '144p': 'bestvideo[height<=144]+bestaudio/best',
-                '240p': 'bestvideo[height<=240]+bestaudio/best',
-                '360p': 'bestvideo[height<=360]+bestaudio/best',
-                '480p': 'bestvideo[height<=480]+bestaudio/best',
-                '720p': 'bestvideo[height<=720]+bestaudio/best',
-                '1080p': 'bestvideo[height<=1080]+bestaudio/best',
-            }
-            selected_format = format_map.get(video_quality, 'bestvideo+bestaudio/best')
             ydl_opts = {
-                'format': selected_format,
+                'format': 'bestvideo+bestaudio/best',
                 'outtmpl': os.path.join(DOWNLOAD_PATH, f'video_{timestamp}.%(ext)s'),
                 'merge_output_format': 'mp4',
+                'progress_hooks': [progress_hook],
+            }
+        elif media_type == 'photo':
+            ydl_opts = {
+                'format': 'best',
+                'outtmpl': os.path.join(DOWNLOAD_PATH, f'photo_{timestamp}.%(ext)s'),
+                'progress_hooks': [progress_hook],
+            }
+        elif media_type == 'file':
+            ydl_opts = {
+                'format': 'best',
+                'outtmpl': os.path.join(DOWNLOAD_PATH, f'file_{timestamp}.%(ext)s'),
                 'progress_hooks': [progress_hook],
             }
         else:
@@ -140,7 +141,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     if bot_state.url is None:
         bot_state.url = text
-        keyboard = [["🎧 Audio", "🎬 Video"], ["❌ Cancel"]]
+        keyboard = [["🎧 Audio", "🎬 Video"], ["🖼️ Photo", "📄 File"], ["❌ Cancel"]]
         reply_markup = ReplyKeyboardMarkup(keyboard, resize_keyboard=True, one_time_keyboard=True)
         await update.message.reply_text("Choose media type:", reply_markup=reply_markup)
     elif bot_state.media_type is None:
@@ -161,37 +162,51 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
             bot_state.__init__()
         elif text.lower() in ['🎬 video', 'video']:
             bot_state.media_type = 'video'
-            # عرض أزرار الجودات الثابتة
-            keyboard = [
-                ["🎥 144p", "🎥 240p"],
-                ["🎥 360p", "🎥 480p"],
-                ["🎥 720p", "🎥 1080p"],
-                ["❌ Cancel"]
-            ]
-            reply_markup = ReplyKeyboardMarkup(keyboard, resize_keyboard=True, one_time_keyboard=True)
-            await update.message.reply_text("Select video quality:", reply_markup=reply_markup)
-        else:
-            await update.message.reply_text("Invalid choice. Please choose '🎧 Audio' or '🎬 Video'.")
-    elif bot_state.video_quality is None:
-        # قائمة الجودات المدعومة
-        supported_qualities = ["144p", "240p", "360p", "480p", "720p", "1080p"]
-        if text in [f"🎥 {q}" for q in supported_qualities]:
-            bot_state.video_quality = text.replace("🎥 ", "")  # استخراج الجودة المختارة
-            await update.message.reply_text(f"⏳ Starting video download ({text})...")
-            file_path = await download_media_with_progress(update, context, bot_state.url, media_type='video', video_quality=bot_state.video_quality)
+            await update.message.reply_text("⏳ Starting video download...")
+            file_path = await download_media_with_progress(update, context, bot_state.url, media_type='video')
             if file_path.startswith("Error"):
                 await update.message.reply_text("❌ Failed to download the media. Please check the link and try again.")
             else:
                 if os.path.exists(file_path):
-                    await update.message.reply_text(f"✅ Video ({text}) downloaded successfully!")
+                    await update.message.reply_text("✅ Video downloaded successfully!")
                     with open(file_path, 'rb') as file:
                         await update.message.reply_video(file)
                     os.remove(file_path)  # حذف الملف بعد الإرسال
                 else:
                     await update.message.reply_text("❌ File not found after download. Please try again.")
             bot_state.__init__()
+        elif text.lower() in ['🖼️ photo', 'photo']:
+            bot_state.media_type = 'photo'
+            await update.message.reply_text("⏳ Starting photo download...")
+            file_path = await download_media_with_progress(update, context, bot_state.url, media_type='photo')
+            if file_path.startswith("Error"):
+                await update.message.reply_text("❌ Failed to download the media. Please check the link and try again.")
+            else:
+                if os.path.exists(file_path):
+                    await update.message.reply_text("✅ Photo downloaded successfully!")
+                    with open(file_path, 'rb') as file:
+                        await update.message.reply_photo(file)
+                    os.remove(file_path)  # حذف الملف بعد الإرسال
+                else:
+                    await update.message.reply_text("❌ File not found after download. Please try again.")
+            bot_state.__init__()
+        elif text.lower() in ['📄 file', 'file']:
+            bot_state.media_type = 'file'
+            await update.message.reply_text("⏳ Starting file download...")
+            file_path = await download_media_with_progress(update, context, bot_state.url, media_type='file')
+            if file_path.startswith("Error"):
+                await update.message.reply_text("❌ Failed to download the media. Please check the link and try again.")
+            else:
+                if os.path.exists(file_path):
+                    await update.message.reply_text("✅ File downloaded successfully!")
+                    with open(file_path, 'rb') as file:
+                        await update.message.reply_document(file)
+                    os.remove(file_path)  # حذف الملف بعد الإرسال
+                else:
+                    await update.message.reply_text("❌ File not found after download. Please try again.")
+            bot_state.__init__()
         else:
-            await update.message.reply_text("Invalid video quality choice. Please select a valid option.")
+            await update.message.reply_text("Invalid choice. Please choose a valid option.")
 
 # نقطة البداية
 def main():
