@@ -1,8 +1,9 @@
 import os
 import yt_dlp
-from telegram import Update, ReplyKeyboardMarkup
-from telegram.ext import Application, CommandHandler, MessageHandler, filters, ContextTypes
 import time
+from telegram import Update, ReplyKeyboardMarkup, ReplyKeyboardRemove
+from telegram.ext import Application, CommandHandler, MessageHandler, filters, ContextTypes
+
 # تحديد مسار التنزيل (داخل المشروع بدلاً من /tmp/)
 DOWNLOAD_PATH = os.path.join(os.getcwd(), 'downloads')
 if not os.path.exists(DOWNLOAD_PATH):
@@ -69,16 +70,26 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     bot_state.__init__()  # إعادة تهيئة الحالة
     await update.message.reply_text(
         "Welcome to the Media Downloader!\n\n"
-        "Please enter the URL of the media you want to download:"
+        "Please enter the URL of the media you want to download:",
+        reply_markup=ReplyKeyboardRemove()
     )
 
 # معالجة الرسائل النصية
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     text = update.message.text.strip()
 
+    # إذا تم الضغط على زر "Cancel"
+    if text.lower() in ['cancel', 'close']:
+        bot_state.__init__()
+        await update.message.reply_text(
+            "Operation canceled. Please enter a new URL to start again.",
+            reply_markup=ReplyKeyboardRemove()
+        )
+        return
+
     if bot_state.url is None:
         bot_state.url = text
-        keyboard = [["🎧 Audio", "🎬 Video"]]
+        keyboard = [["🎧 Audio", "🎬 Video"], ["❌ Cancel"]]
         reply_markup = ReplyKeyboardMarkup(keyboard, resize_keyboard=True, one_time_keyboard=True)
         await update.message.reply_text("Choose media type:", reply_markup=reply_markup)
     elif bot_state.media_type is None:
@@ -106,7 +117,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 bot_state.__init__()
                 return
 
-            keyboard = [[f"🎥 {q}"] for q in available_qualities]
+            keyboard = [[f"🎥 {q}"] for q in available_qualities] + [["❌ Cancel"]]
             reply_markup = ReplyKeyboardMarkup(keyboard, resize_keyboard=True, one_time_keyboard=True)
             await update.message.reply_text("Select video quality:", reply_markup=reply_markup)
         else:
