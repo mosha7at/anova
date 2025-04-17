@@ -105,6 +105,83 @@ async def download_media_with_progress(update: Update, context: ContextTypes.DEF
             )
         return f"Error during download: {e}"
 
+# استجابة لأمر /start
+async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    bot_state.__init__()  # إعادة تهيئة الحالة
+    await update.message.reply_text(
+        "Welcome to the Media Downloader!\n\n"
+        "Please enter the URL of the media you want to download:",
+        reply_markup=ReplyKeyboardRemove()
+    )
+
+# معالجة الرسائل النصية
+async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    text = update.message.text.strip()
+
+    # إذا تم الضغط على زر "Cancel"
+    if text.lower() in ['cancel', 'close', '❌ cancel']:
+        bot_state.__init__()
+        await update.message.reply_text(
+            "Operation canceled. Please enter a new URL to start again.",
+            reply_markup=ReplyKeyboardRemove()
+        )
+        return
+
+    if bot_state.url is None:
+        bot_state.url = text
+        keyboard = [["🎧 Audio", "🎬 Video"], ["❌ Cancel"]]
+        reply_markup = ReplyKeyboardMarkup(keyboard, resize_keyboard=True, one_time_keyboard=True)
+        await update.message.reply_text("Choose media type:", reply_markup=reply_markup)
+    elif bot_state.media_type is None:
+        if text.lower() in ['🎧 audio', 'audio']:
+            bot_state.media_type = 'audio'
+            await update.message.reply_text("⏳ Starting audio download...")
+            file_path = await download_media_with_progress(update, context, bot_state.url, media_type='audio')
+            if file_path.startswith("Error"):
+                await update.message.reply_text("❌ Failed to download the media. Please check the link and try again.")
+            else:
+                if os.path.exists(file_path):
+                    await update.message.reply_text("✅ Audio downloaded successfully!")
+                    with open(file_path, 'rb') as file:
+                        await update.message.reply_audio(file)
+                    os.remove(file_path)  # حذف الملف بعد الإرسال
+                else:
+                    await update.message.reply_text("❌ File not found after download. Please try again.")
+            bot_state.__init__()
+        elif text.lower() in ['🎬 video', 'video']:
+            bot_state.media_type = 'video'
+            # عرض أزرار الجودات الثابتة
+            keyboard = [
+                ["🎥 144p", "🎥 240p"],
+                ["🎥 360p", "🎥 480p"],
+                ["🎥 720p", "🎥 1080p"],
+                ["❌ Cancel"]
+            ]
+            reply_markup = ReplyKeyboardMarkup(keyboard, resize_keyboard=True, one_time_keyboard=True)
+            await update.message.reply_text("Select video quality:", reply_markup=reply_markup)
+        else:
+            await update.message.reply_text("Invalid choice. Please choose '🎧 Audio' or '🎬 Video'.")
+    elif bot_state.video_quality is None:
+        # قائمة الجودات المدعومة
+        supported_qualities = ["144p", "240p", "360p", "480p", "720p", "1080p"]
+        if text in [f"🎥 {q}" for q in supported_qualities]:
+            bot_state.video_quality = text.replace("🎥 ", "")  # استخراج الجودة المختارة
+            await update.message.reply_text(f"⏳ Starting video download ({text})...")
+            file_path = await download_media_with_progress(update, context, bot_state.url, media_type='video', video_quality=bot_state.video_quality)
+            if file_path.startswith("Error"):
+                await update.message.reply_text("❌ Failed to download the media. Please check the link and try again.")
+            else:
+                if os.path.exists(file_path):
+                    await update.message.reply_text(f"✅ Video ({text}) downloaded successfully!")
+                    with open(file_path, 'rb') as file:
+                        await update.message.reply_video(file)
+                    os.remove(file_path)  # حذف الملف بعد الإرسال
+                else:
+                    await update.message.reply_text("❌ File not found after download. Please try again.")
+            bot_state.__init__()
+        else:
+            await update.message.reply_text("Invalid video quality choice. Please select a valid option.")
+
 # نقطة البداية
 def main():
     API_TOKEN = os.getenv('API_TOKEN')
