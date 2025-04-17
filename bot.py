@@ -1,31 +1,46 @@
 import os
 import yt_dlp
 import time
+import logging
 from telegram import Update, ReplyKeyboardMarkup, ReplyKeyboardRemove
 from telegram.ext import Application, CommandHandler, MessageHandler, filters, ContextTypes
-import asyncio
 from telegram.error import Conflict
 
-# إعداد دالة لتحديد مسار التنزيل (استخدام /tmp على Railway)
+# تكوين نظام تسجيل الأحداث
+logging.basicConfig(level=logging.INFO)
+
+# تحديد مسار التنزيل (داخل المشروع بدلاً من /tmp/)
 def get_download_path():
-    return '/tmp/'
+    download_path = os.path.join(os.getcwd(), 'downloads')
+    if not os.path.exists(download_path):
+        os.makedirs(download_path)
+    return download_path
+
+# دالة تنظيف الملفات القديمة
+def clean_old_files(download_path, max_age_seconds=3600):
+    """حذف الملفات القديمة التي تتجاوز عمرها max_age_seconds."""
+    now = time.time()
+    for filename in os.listdir(download_path):
+        file_path = os.path.join(download_path, filename)
+        if os.path.isfile(file_path) and (now - os.path.getmtime(file_path)) > max_age_seconds:
+            os.remove(file_path)
+            logging.info(f"Deleted old file: {file_path}")
 
 # دالة تنزيل الملفات باستخدام yt-dlp
 def download_media(url, media_type='video', video_quality=None):
-    save_path = get_download_path()  # تحديد مسار التنزيل
-    timestamp = time.strftime("%Y%m%d-%H%M%S")  # إضافة طابع زمني لتجنب التكرار
+    save_path = get_download_path()
+    timestamp = time.strftime("%Y%m%d-%H%M%S")
     try:
-        if media_type == 'audio':  # صوت
+        if media_type == 'audio':
             ydl_opts = {
                 'format': 'bestaudio/best',
-                'outtmpl': os.path.join(save_path, f'%(id)s_{timestamp}.%(ext)s'),  # استخدام معرف الفيديو فقط
+                'outtmpl': os.path.join(save_path, f'%(id)s_{timestamp}.%(ext)s'),
                 'postprocessors': [{
                     'key': 'FFmpegExtractAudio',
                     'preferredcodec': 'mp3',
-                    'preferredquality': '192',  # جودة MP3
                 }],
             }
-        elif media_type == 'video':  # فيديو
+        elif media_type == 'video':
             format_map = {
                 '144p': 'bestvideo[height<=144]+bestaudio/best',
                 '240p': 'bestvideo[height<=240]+bestaudio/best',
@@ -37,25 +52,32 @@ def download_media(url, media_type='video', video_quality=None):
             selected_format = format_map.get(video_quality, 'bestvideo+bestaudio/best')
             ydl_opts = {
                 'format': selected_format,
-                'outtmpl': os.path.join(save_path, f'%(id)s_{timestamp}.%(ext)s'),  # استخدام معرف الفيديو فقط
+                'outtmpl': os.path.join(save_path, f'%(id)s_{timestamp}.%(ext)s'),
             }
         else:
             return "Invalid media type."
 
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-            print(f"Downloading {media_type} from {url}...")
             info_dict = ydl.extract_info(url, download=True)
+            original_file = ydl.prepare_filename(info_dict)
 
-            # إرجاع مسار الملف بعد التنزيل
-            file_name = ydl.prepare_filename(info_dict)
-            print(f"File downloaded successfully to {file_name}")
-            return file_name
+            if media_type == 'audio':
+                converted_file = os.path.splitext(original_file)[0] + '.mp3'
+                if os.path.exists(converted_file):
+                    os.remove(original_file)  # حذف الملف الأصلي
+                    return converted_file
+                else:
+                    logging.error("Conversion failed. Converted file not found.")
+                    return "Error: Conversion failed."
+            else:
+                return original_file
+
     except yt_dlp.utils.DownloadError as e:
-        if "Facebook" in str(e):
-            return "Error: Failed to download from Facebook. Make sure the link is valid and accessible."
+        logging.error(f"Download error: {e}")
         return f"Error during download: {e}"
     except Exception as e:
-        return f"Error during download: {e}"
+        logging.error(f"Unexpected error: {e}")
+        return f"Error: {e}"
 
 # حالة البوت
 class BotState:
@@ -96,17 +118,14 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
             else:
                 # التحقق من وجود الملف قبل فتحه
                 if os.path.exists(file_path):
-                    # تقليل حجم الملف إذا كان كبيرًا
+                    # التحقق من حجم الملف
                     file_size = os.path.getsize(file_path)
                     if file_size > 50 * 1024 * 1024:  # أكثر من 50 ميجابايت
-                        await update.message.reply_text("⚠️ File size is too large. Compressing...")
-                        compressed_file_path = compress_file(file_path)
-                        if compressed_file_path:
-                            file_path = compressed_file_path
-
-                    await update.message.reply_text("✅ Audio downloaded successfully!")
-                    with open(file_path, 'rb') as file:
-                        await update.message.reply_audio(file)
+                        await update.message.reply_text("⚠️ File size is too large. Cannot send via Telegram.")
+                    else:
+                        await update.message.reply_text("✅ Audio downloaded successfully!")
+                        with open(file_path, 'rb') as file:
+                            await update.message.reply_audio(file)
                     os.remove(file_path)  # حذف الملف بعد الإرسال
                 else:
                     await update.message.reply_text("❌ File not found after download. Please try again.")
@@ -140,17 +159,14 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
             else:
                 # التحقق من وجود الملف قبل فتحه
                 if os.path.exists(file_path):
-                    # تقليل حجم الملف إذا كان كبيرًا
+                    # التحقق من حجم الملف
                     file_size = os.path.getsize(file_path)
                     if file_size > 50 * 1024 * 1024:  # أكثر من 50 ميجابايت
-                        await update.message.reply_text("⚠️ File size is too large. Compressing...")
-                        compressed_file_path = compress_file(file_path)
-                        if compressed_file_path:
-                            file_path = compressed_file_path
-
-                    await update.message.reply_text(f"✅ Video ({text}) downloaded successfully!")
-                    with open(file_path, 'rb') as file:
-                        await update.message.reply_video(file)
+                        await update.message.reply_text("⚠️ File size is too large. Cannot send via Telegram.")
+                    else:
+                        await update.message.reply_text(f"✅ Video ({text}) downloaded successfully!")
+                        with open(file_path, 'rb') as file:
+                            await update.message.reply_video(file)
                     os.remove(file_path)  # حذف الملف بعد الإرسال
                 else:
                     await update.message.reply_text("❌ File not found after download. Please try again.")
@@ -158,48 +174,13 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         else:
             await update.message.reply_text("Invalid video quality choice. Please select a valid option.")
 
-# دالة لضغط الملفات
-def compress_file(file_path):
-    try:
-        import subprocess
-        compressed_file_path = os.path.splitext(file_path)[0] + "_compressed.mp4"
-        subprocess.run([
-            "ffmpeg", "-i", file_path, "-vcodec", "libx265", "-crf", "28", compressed_file_path
-        ], check=True)
-        if os.path.exists(compressed_file_path):
-            return compressed_file_path
-        return None
-    except Exception as e:
-        print(f"Compression failed: {e}")
-        return None
-
-# استجابة لأمر /subscribers
-async def subscribers(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    chat_id = update.message.chat_id
-    try:
-        member_count = await context.bot.get_chat_member_count(chat_id)
-        await update.message.reply_text(f"Total subscribers: {member_count}")
-    except Exception as e:
-        await update.message.reply_text(f"Failed to fetch subscriber count: {e}")
-
-# معالج الأخطاء
-async def error_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    try:
-        raise context.error
-    except Conflict:
-        print("Conflict detected: Another instance of the bot is running. Stopping this instance.")
-        await context.bot.send_message(chat_id=update.effective_chat.id, text="⚠️ Another instance of the bot is running. Please try again later.")
-    except Exception as e:
-        print(f"Unhandled error: {e}")
-        await context.bot.send_message(chat_id=update.effective_chat.id, text=f"⚠️ An unexpected error occurred: {e}")
-
 # إيقاف Webhook إذا كان قيد التشغيل
 async def stop_webhook_if_running(application):
     try:
         await application.bot.delete_webhook()
-        print("Webhook stopped successfully.")
+        logging.info("Webhook stopped successfully.")
     except Exception as e:
-        print(f"Failed to stop webhook: {e}")
+        logging.error(f"Failed to stop webhook: {e}")
 
 # نقطة البداية
 def main():
@@ -207,6 +188,9 @@ def main():
     API_TOKEN = os.getenv('API_TOKEN')
     if not API_TOKEN:
         raise ValueError("API_TOKEN is not set in environment variables.")
+
+    # تنظيف الملفات القديمة عند بدء البرنامج
+    clean_old_files(get_download_path())
 
     # إنشاء حلقة حدث يدوياً
     loop = asyncio.new_event_loop()
@@ -219,11 +203,7 @@ def main():
 
     # إضافة معالجات الأوامر
     application.add_handler(CommandHandler("start", start))
-    application.add_handler(CommandHandler("subscribers", subscribers))  # إضافة معالج /subscribers
     application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
-
-    # إضافة معالج الأخطاء
-    application.add_error_handler(error_handler)
 
     # بدء البوت
     application.run_polling()
