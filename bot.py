@@ -1,6 +1,5 @@
 import os
 import yt_dlp
-import asyncio
 import time
 import logging
 from telegram import Update, ReplyKeyboardMarkup, ReplyKeyboardRemove
