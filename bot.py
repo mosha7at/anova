@@ -70,17 +70,24 @@ async def download_media_with_progress(update: Update, context: ContextTypes.DEF
 
         # معالجة تحديثات التقدم في الخلفية
         async def handle_progress_updates():
+            last_percent = None  # لتخزين آخر نسبة مئوية تم تحديثها
             while True:
                 try:
                     # الحصول على تحديث التقدم من قائمة الانتظار
                     percent = progress_queue.get_nowait()
-                    await context.bot.edit_message_text(
-                        chat_id=update.message.chat_id,
-                        message_id=progress_message.message_id,
-                        text=f"⏳ Downloading... {percent}"
-                    )
+
+                    # التحقق مما إذا كانت النسبة المئوية قد تغيرت
+                    if percent != last_percent:
+                        await context.bot.edit_message_text(
+                            chat_id=update.message.chat_id,
+                            message_id=progress_message.message_id,
+                            text=f"⏳ Downloading... {percent}"
+                        )
+                        last_percent = percent  # تحديث آخر نسبة مئوية
+
                 except queue.Empty:
-                    break
+                    break  # إنهاء الحلقة إذا كانت قائمة الانتظار فارغة
+
                 await asyncio.sleep(0.5)  # تأخير قصير لتجنب الضغط على الحلقة الحدثية
 
         # تشغيل مهمة تحديث الرسائل التفاعلية
