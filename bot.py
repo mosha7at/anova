@@ -22,7 +22,7 @@ def download_media(url, media_type='video', video_quality=None):
                 'postprocessors': [{
                     'key': 'FFmpegExtractAudio',
                     'preferredcodec': 'mp3',
-                    'preferredquality': '192',
+                    'preferredquality': '192',  # جودة MP3
                 }],
             }
         elif media_type == 'video':  # فيديو
@@ -96,6 +96,14 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
             else:
                 # التحقق من وجود الملف قبل فتحه
                 if os.path.exists(file_path):
+                    # تقليل حجم الملف إذا كان كبيرًا
+                    file_size = os.path.getsize(file_path)
+                    if file_size > 50 * 1024 * 1024:  # أكثر من 50 ميجابايت
+                        await update.message.reply_text("⚠️ File size is too large. Compressing...")
+                        compressed_file_path = compress_file(file_path)
+                        if compressed_file_path:
+                            file_path = compressed_file_path
+
                     await update.message.reply_text("✅ Audio downloaded successfully!")
                     with open(file_path, 'rb') as file:
                         await update.message.reply_audio(file)
@@ -132,6 +140,14 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
             else:
                 # التحقق من وجود الملف قبل فتحه
                 if os.path.exists(file_path):
+                    # تقليل حجم الملف إذا كان كبيرًا
+                    file_size = os.path.getsize(file_path)
+                    if file_size > 50 * 1024 * 1024:  # أكثر من 50 ميجابايت
+                        await update.message.reply_text("⚠️ File size is too large. Compressing...")
+                        compressed_file_path = compress_file(file_path)
+                        if compressed_file_path:
+                            file_path = compressed_file_path
+
                     await update.message.reply_text(f"✅ Video ({text}) downloaded successfully!")
                     with open(file_path, 'rb') as file:
                         await update.message.reply_video(file)
@@ -141,6 +157,21 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
             bot_state.__init__()
         else:
             await update.message.reply_text("Invalid video quality choice. Please select a valid option.")
+
+# دالة لضغط الملفات
+def compress_file(file_path):
+    try:
+        import subprocess
+        compressed_file_path = os.path.splitext(file_path)[0] + "_compressed.mp4"
+        subprocess.run([
+            "ffmpeg", "-i", file_path, "-vcodec", "libx265", "-crf", "28", compressed_file_path
+        ], check=True)
+        if os.path.exists(compressed_file_path):
+            return compressed_file_path
+        return None
+    except Exception as e:
+        print(f"Compression failed: {e}")
+        return None
 
 # استجابة لأمر /subscribers
 async def subscribers(update: Update, context: ContextTypes.DEFAULT_TYPE):
