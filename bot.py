@@ -13,9 +13,9 @@ def get_download_path():
     elif platform == "win32":  # إذا كان النظام Windows
         return os.path.expanduser("~/Downloads/")
     else:  # لأنظمة أخرى مثل Linux وmacOS
-        return os.path.expanduser("~/Downloads/")
+        return "/root/Downloads/"  # المسار الافتراضي على Railway
 
-# دالة تنزيل الملفات باستخدام yt-dlp
+# دالة تنزيل الملفات باستخدام yt-dlp مع تحديد موقع FFmpeg
 def download_media(url, media_type='video', video_quality=None):
     save_path = get_download_path()  # تحديد مسار التنزيل
     timestamp = time.strftime("%Y%m%d-%H%M%S")  # إضافة طابع زمني لتجنب التكرار
@@ -29,6 +29,7 @@ def download_media(url, media_type='video', video_quality=None):
                     'preferredcodec': 'mp3',
                     'preferredquality': '192',
                 }],
+                'ffmpeg_location': '/usr/bin/ffmpeg',  # تحديد موقع FFmpeg
             }
         elif media_type == 'video':  # فيديو
             format_map = {
@@ -43,6 +44,7 @@ def download_media(url, media_type='video', video_quality=None):
             ydl_opts = {
                 'format': f'bestvideo[height<={selected_quality}]+bestaudio/best',
                 'outtmpl': os.path.join(save_path, f'%(title)s_{timestamp}.%(ext)s'),
+                'ffmpeg_location': '/usr/bin/ffmpeg',  # تحديد موقع FFmpeg
             }
         else:
             return "Invalid media type."
@@ -153,16 +155,18 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
 # نقطة البداية
 def main():
     # أدخل API Token الخاص بك هنا
-    API_TOKEN = '8102684495:AAEt7tulbJnCy9xIos9b5Kf9OwwGqf3UqMI'
+    API_TOKEN = os.getenv("8102684495:AAEt7tulbJnCy9xIos9b5Kf9OwwGqf3UqMI")
 
-    application = Application.builder().token(API_TOKEN).build()
+    # إنشاء التطبيق
+    app = Application.builder().token(API_TOKEN).build()
 
     # إضافة معالجات الأوامر
-    application.add_handler(CommandHandler("start", start))
-    application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
+    app.add_handler(CommandHandler("start", start))
+    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
 
-    # بدء البوت
-    application.run_polling()
+    # بدء البوت باستخدام Polling
+    print("Starting bot...")
+    app.run_polling()
 
 if __name__ == '__main__':
     main()
