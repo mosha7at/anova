@@ -8,6 +8,24 @@ from telegram.ext import Application, CommandHandler, MessageHandler, filters, C
 def get_download_path():
     return '/tmp/'
 
+# ملف لتخزين معرفات المستخدمين الفريدين
+USER_IDS_FILE = 'user_ids.txt'
+
+# تحميل معرفات المستخدمين من الملف
+def load_user_ids():
+    if not os.path.exists(USER_IDS_FILE):
+        return set()
+    with open(USER_IDS_FILE, 'r') as file:
+        return set(line.strip() for line in file)
+
+# حفظ معرفات المستخدمين إلى الملف
+def save_user_id(user_id):
+    user_ids = load_user_ids()
+    if user_id not in user_ids:
+        user_ids.add(user_id)
+        with open(USER_IDS_FILE, 'a') as file:
+            file.write(f"{user_id}\n")
+
 # دالة تنزيل الملفات باستخدام yt-dlp
 def download_media(url, media_type='video', video_quality=None):
     save_path = get_download_path()  # تحديد مسار التنزيل
@@ -65,12 +83,19 @@ bot_state = BotState()
 
 # استجابة لأمر /start
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    user_id = str(update.message.from_user.id)
+    save_user_id(user_id)  # حفظ معرف المستخدم
     bot_state.__init__()  # إعادة تهيئة الحالة
     await update.message.reply_text(
         "Welcome to the Multi-Platform Media Downloader!\n\n"
         "Please enter the URL of the media you want to download:",
         reply_markup=ReplyKeyboardRemove()
     )
+
+# استجابة لإظهار عدد المستخدمين
+async def users(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    user_ids = load_user_ids()
+    await update.message.reply_text(f"Number of unique users: {len(user_ids)}")
 
 # استجابة لإدخال الرسائل
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -143,6 +168,7 @@ def main():
 
     # إضافة معالجات الأوامر
     application.add_handler(CommandHandler("start", start))
+    application.add_handler(CommandHandler("users", users))  # إضافة أمر /users
     application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
 
     # بدء البوت
