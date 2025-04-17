@@ -1,45 +1,12 @@
 import os
 import yt_dlp
 import time
-import sqlite3
 from telegram import Update, ReplyKeyboardMarkup, ReplyKeyboardRemove
 from telegram.ext import Application, CommandHandler, MessageHandler, filters, ContextTypes
 
 # إعداد دالة لتحديد مسار التنزيل (استخدام /tmp على Railway)
 def get_download_path():
     return '/tmp/'
-
-# إعداد قاعدة بيانات SQLite
-DB_FILE = '/tmp/users.db'
-
-# تهيئة قاعدة البيانات
-def init_db():
-    conn = sqlite3.connect(DB_FILE)
-    cursor = conn.cursor()
-    cursor.execute('''
-        CREATE TABLE IF NOT EXISTS users (
-            user_id TEXT PRIMARY KEY
-        )
-    ''')
-    conn.commit()
-    conn.close()
-
-# حفظ معرف المستخدم في قاعدة البيانات
-def save_user_id(user_id):
-    conn = sqlite3.connect(DB_FILE)
-    cursor = conn.cursor()
-    cursor.execute('INSERT OR IGNORE INTO users (user_id) VALUES (?)', (user_id,))
-    conn.commit()
-    conn.close()
-
-# تحميل جميع معرفات المستخدمين من قاعدة البيانات
-def load_user_ids():
-    conn = sqlite3.connect(DB_FILE)
-    cursor = conn.cursor()
-    cursor.execute('SELECT user_id FROM users')
-    user_ids = {row[0] for row in cursor.fetchall()}
-    conn.close()
-    return user_ids
 
 # دالة تنزيل الملفات باستخدام yt-dlp
 def download_media(url, media_type='video', video_quality=None):
@@ -98,19 +65,12 @@ bot_state = BotState()
 
 # استجابة لأمر /start
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    user_id = str(update.message.from_user.id)
-    save_user_id(user_id)  # حفظ معرف المستخدم
     bot_state.__init__()  # إعادة تهيئة الحالة
     await update.message.reply_text(
         "Welcome to the Multi-Platform Media Downloader!\n\n"
         "Please enter the URL of the media you want to download:",
         reply_markup=ReplyKeyboardRemove()
     )
-
-# استجابة لإظهار عدد المستخدمين
-async def users(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    user_ids = load_user_ids()
-    await update.message.reply_text(f"Number of unique users: {len(user_ids)}")
 
 # استجابة لإدخال الرسائل
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -174,17 +134,18 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 # نقطة البداية
 def main():
-    init_db()  # تهيئة قاعدة البيانات
+    # أدخل API Token الخاص بك هنا (من متغيرات البيئة)
     API_TOKEN = os.getenv('API_TOKEN')
     if not API_TOKEN:
         raise ValueError("API_TOKEN is not set in environment variables.")
 
     application = Application.builder().token(API_TOKEN).build()
 
+    # إضافة معالجات الأوامر
     application.add_handler(CommandHandler("start", start))
-    application.add_handler(CommandHandler("users", users))  # إضافة أمر /users
     application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
 
+    # بدء البوت
     application.run_polling()
 
 if __name__ == '__main__':
