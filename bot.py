@@ -79,7 +79,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     text = update.message.text.strip()
 
     # إذا تم الضغط على زر "Cancel"
-    if text.lower() in ['cancel', 'close']:
+    if text.lower() in ['cancel', 'close', '❌ cancel']:
         bot_state.__init__()
         await update.message.reply_text(
             "Operation canceled. Please enter a new URL to start again.",
@@ -110,23 +110,22 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
             bot_state.__init__()
         elif text.lower() in ['🎬 video', 'video']:
             bot_state.media_type = 'video'
-            # عرض جودات الفيديو المتاحة
-            available_qualities = get_available_qualities(bot_state.url)
-            if not available_qualities:
-                await update.message.reply_text("❌ No video qualities found for this link.")
-                bot_state.__init__()
-                return
-
-            keyboard = [[f"🎥 {q}"] for q in available_qualities] + [["❌ Cancel"]]
+            # عرض أزرار الجودات الثابتة
+            keyboard = [
+                ["🎥 144p", "🎥 240p"],
+                ["🎥 360p", "🎥 480p"],
+                ["🎥 720p", "🎥 1080p"],
+                ["❌ Cancel"]
+            ]
             reply_markup = ReplyKeyboardMarkup(keyboard, resize_keyboard=True, one_time_keyboard=True)
             await update.message.reply_text("Select video quality:", reply_markup=reply_markup)
         else:
             await update.message.reply_text("Invalid choice. Please choose '🎧 Audio' or '🎬 Video'.")
     elif bot_state.video_quality is None:
-        # استخراج الجودة المختارة
-        quality_map = {f"🎥 {q}": q for q in get_available_qualities(bot_state.url)}
-        if text in quality_map:
-            bot_state.video_quality = quality_map[text]
+        # قائمة الجودات المدعومة
+        supported_qualities = ["144p", "240p", "360p", "480p", "720p", "1080p"]
+        if text in [f"🎥 {q}" for q in supported_qualities]:
+            bot_state.video_quality = text.replace("🎥 ", "")  # استخراج الجودة المختارة
             await update.message.reply_text(f"⏳ Downloading video ({text})... Please wait.")
             file_path = download_media(bot_state.url, media_type='video', video_quality=bot_state.video_quality)
             if file_path.startswith("Error"):
@@ -142,22 +141,6 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
             bot_state.__init__()
         else:
             await update.message.reply_text("Invalid video quality choice. Please select a valid option.")
-
-# دالة لاستخراج الجودات المتاحة
-def get_available_qualities(url):
-    try:
-        with yt_dlp.YoutubeDL() as ydl:
-            info_dict = ydl.extract_info(url, download=False)
-            formats = info_dict.get('formats', [])
-            available_qualities = set()
-            for format in formats:
-                height = format.get('height')
-                if height:
-                    available_qualities.add(str(height) + 'p')
-            return sorted(available_qualities, key=lambda x: int(x[:-1]))  # ترتيب تصاعدي
-    except Exception as e:
-        print(f"Error fetching available qualities: {e}")
-        return []
 
 # نقطة البداية
 def main():
