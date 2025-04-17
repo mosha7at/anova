@@ -4,6 +4,7 @@ import time
 from telegram import Update, ReplyKeyboardMarkup, ReplyKeyboardRemove
 from telegram.ext import Application, CommandHandler, MessageHandler, filters, ContextTypes
 import asyncio
+from telegram.error import Conflict
 
 # إعداد دالة لتحديد مسار التنزيل (استخدام /tmp على Railway)
 def get_download_path():
@@ -142,6 +143,17 @@ async def subscribers(update: Update, context: ContextTypes.DEFAULT_TYPE):
     except Exception as e:
         await update.message.reply_text(f"Failed to fetch subscriber count: {e}")
 
+# معالج الأخطاء
+async def error_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    try:
+        raise context.error
+    except Conflict:
+        print("Conflict detected: Another instance of the bot is running. Stopping this instance.")
+        await context.bot.send_message(chat_id=update.effective_chat.id, text="⚠️ Another instance of the bot is running. Please try again later.")
+    except Exception as e:
+        print(f"Unhandled error: {e}")
+        await context.bot.send_message(chat_id=update.effective_chat.id, text=f"⚠️ An unexpected error occurred: {e}")
+
 # إيقاف Webhook إذا كان قيد التشغيل
 async def stop_webhook_if_running(application):
     try:
@@ -170,6 +182,9 @@ def main():
     application.add_handler(CommandHandler("start", start))
     application.add_handler(CommandHandler("subscribers", subscribers))  # إضافة معالج /subscribers
     application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
+
+    # إضافة معالج الأخطاء
+    application.add_error_handler(error_handler)
 
     # بدء البوت
     application.run_polling()
