@@ -1,7 +1,6 @@
 import os
 import yt_dlp
 import time
-import re
 from telegram import Update, ReplyKeyboardMarkup, ReplyKeyboardRemove
 from telegram.ext import Application, CommandHandler, MessageHandler, filters, ContextTypes
 
@@ -69,7 +68,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     bot_state.__init__()  # إعادة تهيئة الحالة
     await update.message.reply_text(
         "Welcome to the Multi-Platform Media Downloader!\n\n"
-        "Please enter the URL of the media you want to download (YouTube, TikTok, Instagram, etc.):",
+        "Please enter the URL of the media you want to download:",
         reply_markup=ReplyKeyboardRemove()
     )
 
@@ -78,18 +77,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     text = update.message.text.strip()
 
     if bot_state.url is None:
-        # التحقق من صحة الرابط باستخدام التعبيرات النمطية
-        platforms_regex = (
-            r'(https?://)?(www\.)?'  # http أو https (اختياري)
-            r'(youtube\.com|youtu\.be|tiktok\.com|instagram\.com)'  # الأنماط المدعومة
-            r'(/.*)?'  # باقي الرابط
-        )
-        match = re.match(platforms_regex, text)
-        if not match:
-            await update.message.reply_text(
-                "Invalid URL. Please enter a valid link from YouTube, TikTok, or Instagram."
-            )
-            return
+        # قبول أي نص كرابط دون التحقق من صحته
         bot_state.url = text
         keyboard = [
             ["🎧 Audio", "🎬 Video"]
@@ -102,7 +90,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await update.message.reply_text("⏳ Downloading audio... Please wait.")
             file_path = download_media(bot_state.url, media_type='audio')
             if file_path.startswith("Error"):
-                await update.message.reply_text(file_path)
+                await update.message.reply_text("❌ Failed to download the media. Please check the link and try again.")
             else:
                 await update.message.reply_text("✅ Audio downloaded successfully!")
                 with open(file_path, 'rb') as file:
@@ -134,7 +122,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await update.message.reply_text(f"⏳ Downloading video ({text})... Please wait.")
             file_path = download_media(bot_state.url, media_type='video', video_quality=bot_state.video_quality)
             if file_path.startswith("Error"):
-                await update.message.reply_text(file_path)
+                await update.message.reply_text("❌ Failed to download the media. Please check the link and try again.")
             else:
                 await update.message.reply_text(f"✅ Video ({text}) downloaded successfully!")
                 with open(file_path, 'rb') as file:
