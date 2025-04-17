@@ -1,6 +1,7 @@
 import os
 import yt_dlp
 import time
+import asyncio
 from telegram import Update, ReplyKeyboardMarkup, ReplyKeyboardRemove
 from telegram.ext import Application, CommandHandler, MessageHandler, filters, ContextTypes
 
@@ -28,12 +29,15 @@ async def download_media_with_progress(update: Update, context: ContextTypes.DEF
         if d['status'] == 'downloading':
             percent = d.get('_percent_str', '0%').strip()
             if progress_message:
-                # تحديث الرسالة الحالية
+                # تحديث الرسالة الحالية باستخدام الحلقة الحدث
                 try:
-                    context.bot.edit_message_text(
-                        chat_id=update.message.chat_id,
-                        message_id=progress_message.message_id,
-                        text=f"⏳ Downloading... {percent}"
+                    loop = asyncio.get_event_loop()
+                    loop.run_until_complete(
+                        context.bot.edit_message_text(
+                            chat_id=update.message.chat_id,
+                            message_id=progress_message.message_id,
+                            text=f"⏳ Downloading... {percent}"
+                        )
                     )
                 except Exception as e:
                     print(f"Error updating progress message: {e}")
