@@ -24,6 +24,15 @@ def progress_hook(d):
     if d['status'] == 'downloading':
         print(f"Downloading: {d['_percent_str']}")
 
+# دالة لتقليل دقة الفيديو باستخدام FFmpeg
+def reduce_video_quality(input_file, output_file, resolution="360p"):
+    width, height = {"144p": "256:144", "240p": "426:240", "360p": "640:360", "480p": "854:480", "720p": "1280:720"}[resolution]
+    subprocess.run([
+        "ffmpeg", "-i", input_file,
+        "-vf", f"scale={width}:{height}",
+        "-c:a", "copy", output_file
+    ])
+
 # دالة تنزيل الملفات باستخدام yt-dlp
 def download_media(url, media_type='video', video_quality=None):
     timestamp = time.strftime("%Y%m%d-%H%M%S")
@@ -59,16 +68,20 @@ def download_media(url, media_type='video', video_quality=None):
                     'socket_timeout': 10,
                 }
             else:
-                # YouTube يدعم اختيار الجودة
-                format_map = {
-                    '144p': 'bestvideo[height<=144]+bestaudio/best',
-                    '240p': 'bestvideo[height<=240]+bestaudio/best',
-                    '360p': 'bestvideo[height<=360]+bestaudio/best',
-                    '480p': 'bestvideo[height<=480]+bestaudio/best',
-                    '720p': 'bestvideo[height<=720]+bestaudio/best',
-                    '1080p': 'bestvideo[height<=1080]+bestaudio/best',
-                }
-                selected_format = format_map.get(video_quality, 'bestvideo+bestaudio/best')
+                # YouTube: استخراج الجودات المتاحة
+                with yt_dlp.YoutubeDL() as ydl:
+                    info_dict = ydl.extract_info(url, download=False)
+                    formats = info_dict.get('formats', [])
+                    available_qualities = set()
+                    for fmt in formats:
+                        if fmt.get('height'):
+                            available_qualities.add(fmt['height'])
+
+                    # تحديد الجودة الأقرب
+                    requested_height = int(video_quality.replace("p", ""))
+                    closest_quality = min(available_qualities, key=lambda x: abs(x - requested_height))
+                    selected_format = f"bestvideo[height<={closest_quality}]+bestaudio/best"
+
                 ydl_opts = {
                     'format': selected_format,
                     'outtmpl': os.path.join(DOWNLOAD_PATH, f'video_{timestamp}.%(ext)s'),
