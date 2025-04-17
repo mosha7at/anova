@@ -1,7 +1,7 @@
 FROM python:3.9-slim
 
-# تحديث النظام وتثبيت FFmpeg و SQLite
-RUN apt-get update && apt-get install -y ffmpeg sqlite3 && rm -rf /var/lib/apt/lists/*
+# تحديث النظام وتثبيت FFmpeg
+RUN apt-get update && apt-get install -y ffmpeg && rm -rf /var/lib/apt/lists/*
 
 # نسخ الملفات إلى الحاوية
 COPY . /app
