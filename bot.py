@@ -6,7 +6,7 @@ import queue
 from telegram import Update, ReplyKeyboardMarkup, ReplyKeyboardRemove
 from telegram.ext import Application, CommandHandler, MessageHandler, filters, ContextTypes
 
-# تحديد مسار التنزيل (داخل المشروع بدلاً من /tmp/)
+# تحديد مسار التنزيل
 DOWNLOAD_PATH = os.path.join(os.getcwd(), 'downloads')
 if not os.path.exists(DOWNLOAD_PATH):
     os.makedirs(DOWNLOAD_PATH)
@@ -20,7 +20,7 @@ class BotState:
 
 bot_state = BotState()
 
-# قائمة انتظار للتعامل مع تحديثات التقدم
+# قائمة انتظار لتحديثات التقدم
 progress_queue = queue.Queue()
 
 # دالة تنزيل الوسائط مع رسائل تفاعلية
@@ -46,6 +46,7 @@ async def download_media_with_progress(update: Update, context: ContextTypes.DEF
                 'progress_hooks': [progress_hook],
             }
         elif media_type == 'video':
+            # استخدام الجودة المحددة أو الافتراضية
             format_map = {
                 '144p': 'bestvideo[height<=144]+bestaudio/best',
                 '240p': 'bestvideo[height<=240]+bestaudio/best',
@@ -81,6 +82,9 @@ async def download_media_with_progress(update: Update, context: ContextTypes.DEF
                 except queue.Empty:
                     break
                 await asyncio.sleep(0.5)  # تأخير قصير لتجنب الضغط على الحلقة الحدثية
+
+        # تشغيل مهمة تحديث الرسائل التفاعلية
+        asyncio.create_task(handle_progress_updates())
 
         # تنفيذ عملية التنزيل
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
