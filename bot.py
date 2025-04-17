@@ -94,10 +94,14 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
             if file_path.startswith("Error"):
                 await update.message.reply_text("❌ Failed to download the media. Please check the link and try again.")
             else:
-                await update.message.reply_text("✅ Audio downloaded successfully!")
-                with open(file_path, 'rb') as file:
-                    await update.message.reply_audio(file)
-                os.remove(file_path)  # حذف الملف بعد الإرسال
+                # التحقق من وجود الملف قبل فتحه
+                if os.path.exists(file_path):
+                    await update.message.reply_text("✅ Audio downloaded successfully!")
+                    with open(file_path, 'rb') as file:
+                        await update.message.reply_audio(file)
+                    os.remove(file_path)  # حذف الملف بعد الإرسال
+                else:
+                    await update.message.reply_text("❌ File not found after download. Please try again.")
             bot_state.__init__()
         elif text.lower() in ['🎬 video', 'video']:
             bot_state.media_type = 'video'
@@ -126,10 +130,14 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
             if file_path.startswith("Error"):
                 await update.message.reply_text("❌ Failed to download the media. Please check the link and try again.")
             else:
-                await update.message.reply_text(f"✅ Video ({text}) downloaded successfully!")
-                with open(file_path, 'rb') as file:
-                    await update.message.reply_video(file)
-                os.remove(file_path)  # حذف الملف بعد الإرسال
+                # التحقق من وجود الملف قبل فتحه
+                if os.path.exists(file_path):
+                    await update.message.reply_text(f"✅ Video ({text}) downloaded successfully!")
+                    with open(file_path, 'rb') as file:
+                        await update.message.reply_video(file)
+                    os.remove(file_path)  # حذف الملف بعد الإرسال
+                else:
+                    await update.message.reply_text("❌ File not found after download. Please try again.")
             bot_state.__init__()
         else:
             await update.message.reply_text("Invalid video quality choice. Please select a valid option.")
