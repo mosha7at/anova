@@ -7,7 +7,7 @@ from telegram.ext import Application, CommandHandler, MessageHandler, filters, C
 # تحديد مسار التنزيل (داخل المشروع بدلاً من /tmp/)
 DOWNLOAD_PATH = os.path.join(os.getcwd(), 'downloads')
 if not os.path.exists(DOWNLOAD_PATH):
-    os.makedirs(DOWNLOAD_PATH)
+    os.makedirs(DOWNLOAD_PATH) 
 
 # دالة تنزيل الملفات باستخدام yt-dlp
 def download_media(url, media_type='video', video_quality=None):
