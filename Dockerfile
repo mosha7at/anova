@@ -11,4 +11,4 @@ WORKDIR /app
 RUN pip install --no-cache-dir -r requirements.txt
 
 # تشغيل التطبيق
-CMD ["python", "main.py"]
+CMD ["python", "bot.py"]
