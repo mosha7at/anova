@@ -1,6 +1,7 @@
 import os
 import yt_dlp
 import time
+import sqlite3
 from telegram import Update, ReplyKeyboardMarkup, ReplyKeyboardRemove
 from telegram.ext import Application, CommandHandler, MessageHandler, filters, ContextTypes
 
@@ -8,23 +9,37 @@ from telegram.ext import Application, CommandHandler, MessageHandler, filters, C
 def get_download_path():
     return '/tmp/'
 
-# ملف لتخزين معرفات المستخدمين الفريدين
-USER_IDS_FILE = 'user_ids.txt'
+# إعداد قاعدة بيانات SQLite
+DB_FILE = '/tmp/users.db'
 
-# تحميل معرفات المستخدمين من الملف
-def load_user_ids():
-    if not os.path.exists(USER_IDS_FILE):
-        return set()
-    with open(USER_IDS_FILE, 'r') as file:
-        return set(line.strip() for line in file)
+# تهيئة قاعدة البيانات
+def init_db():
+    conn = sqlite3.connect(DB_FILE)
+    cursor = conn.cursor()
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS users (
+            user_id TEXT PRIMARY KEY
+        )
+    ''')
+    conn.commit()
+    conn.close()
 
-# حفظ معرفات المستخدمين إلى الملف
+# حفظ معرف المستخدم في قاعدة البيانات
 def save_user_id(user_id):
-    user_ids = load_user_ids()
-    if user_id not in user_ids:
-        user_ids.add(user_id)
-        with open(USER_IDS_FILE, 'a') as file:
-            file.write(f"{user_id}\n")
+    conn = sqlite3.connect(DB_FILE)
+    cursor = conn.cursor()
+    cursor.execute('INSERT OR IGNORE INTO users (user_id) VALUES (?)', (user_id,))
+    conn.commit()
+    conn.close()
+
+# تحميل جميع معرفات المستخدمين من قاعدة البيانات
+def load_user_ids():
+    conn = sqlite3.connect(DB_FILE)
+    cursor = conn.cursor()
+    cursor.execute('SELECT user_id FROM users')
+    user_ids = {row[0] for row in cursor.fetchall()}
+    conn.close()
+    return user_ids
 
 # دالة تنزيل الملفات باستخدام yt-dlp
 def download_media(url, media_type='video', video_quality=None):
@@ -159,19 +174,17 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 # نقطة البداية
 def main():
-    # أدخل API Token الخاص بك هنا (من متغيرات البيئة)
+    init_db()  # تهيئة قاعدة البيانات
     API_TOKEN = os.getenv('API_TOKEN')
     if not API_TOKEN:
         raise ValueError("API_TOKEN is not set in environment variables.")
 
     application = Application.builder().token(API_TOKEN).build()
 
-    # إضافة معالجات الأوامر
     application.add_handler(CommandHandler("start", start))
     application.add_handler(CommandHandler("users", users))  # إضافة أمر /users
     application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
 
-    # بدء البوت
     application.run_polling()
 
 if __name__ == '__main__':
