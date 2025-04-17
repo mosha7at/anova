@@ -9,6 +9,9 @@ DOWNLOAD_PATH = os.path.join(os.getcwd(), 'downloads')
 if not os.path.exists(DOWNLOAD_PATH):
     os.makedirs(DOWNLOAD_PATH)
 
+# قائمة بالمواقع المدعومة
+SUPPORTED_SITES = ["youtube.com", "youtu.be", "vimeo.com"]
+
 # دالة تنزيل الملفات باستخدام yt-dlp
 def download_media(url, media_type='video', video_quality=None):
     timestamp = time.strftime("%Y%m%d-%H%M%S")
@@ -93,6 +96,17 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     if bot_state.url is None:
         bot_state.url = text
+
+        # التحقق مما إذا كان الرابط مدعومًا
+        if not any(site in bot_state.url for site in SUPPORTED_SITES):
+            await update.message.reply_text(
+                "❌ The provided link is not supported. "
+                "Please use a link from one of the following supported sites: "
+                f"{', '.join(SUPPORTED_SITES)}."
+            )
+            bot_state.__init__()
+            return
+
         keyboard = [["🎧 Audio", "🎬 Video"], ["❌ Cancel"]]
         reply_markup = ReplyKeyboardMarkup(keyboard, resize_keyboard=True, one_time_keyboard=True)
         await update.message.reply_text("Choose media type:", reply_markup=reply_markup)
@@ -103,9 +117,11 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
             file_path = download_media(bot_state.url, media_type='audio')
             if file_path.startswith("Error"):
                 await update.message.reply_text(
-                    "❌ Failed to download the media. "
-                    "Please ensure the link is valid and try again later. "
-                    "If the issue persists, the video may be private or not supported."
+                    "❌ Failed to download the media. Possible reasons:\n"
+                    "- The link may be invalid or unsupported.\n"
+                    "- The video may be private or restricted.\n"
+                    "- The website structure may have changed.\n\n"
+                    "Please ensure the link is valid and try again later."
                 )
             else:
                 if os.path.exists(file_path):
@@ -139,9 +155,11 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
             file_path = download_media(bot_state.url, media_type='video', video_quality=bot_state.video_quality)
             if file_path.startswith("Error"):
                 await update.message.reply_text(
-                    "❌ Failed to download the media. "
-                    "Please ensure the link is valid and try again later. "
-                    "If the issue persists, the video may be private or not supported."
+                    "❌ Failed to download the media. Possible reasons:\n"
+                    "- The link may be invalid or unsupported.\n"
+                    "- The video may be private or restricted.\n"
+                    "- The website structure may have changed.\n\n"
+                    "Please ensure the link is valid and try again later."
                 )
             else:
                 if os.path.exists(file_path):
