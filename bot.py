@@ -9,9 +9,6 @@ DOWNLOAD_PATH = os.path.join(os.getcwd(), 'downloads')
 if not os.path.exists(DOWNLOAD_PATH):
     os.makedirs(DOWNLOAD_PATH)
 
-# قائمة بالمواقع المدعومة
-SUPPORTED_SITES = ["youtube.com", "youtu.be", "vimeo.com"]
-
 # دالة تنزيل الملفات باستخدام yt-dlp
 def download_media(url, media_type='video', video_quality=None):
     timestamp = time.strftime("%Y%m%d-%H%M%S")
@@ -26,15 +23,26 @@ def download_media(url, media_type='video', video_quality=None):
                 }],
             }
         elif media_type == 'video':
-            format_map = {
-                '144p': 'bestvideo[height<=144]+bestaudio/best',
-                '240p': 'bestvideo[height<=240]+bestaudio/best',
-                '360p': 'bestvideo[height<=360]+bestaudio/best',
-                '480p': 'bestvideo[height<=480]+bestaudio/best',
-                '720p': 'bestvideo[height<=720]+bestaudio/best',
-                '1080p': 'bestvideo[height<=1080]+bestaudio/best',
-            }
-            selected_format = format_map.get(video_quality, 'bestvideo+bestaudio/best')
+            # استخراج جميع التنسيقات المتاحة
+            with yt_dlp.YoutubeDL() as ydl:
+                info_dict = ydl.extract_info(url, download=False)
+                formats = info_dict.get('formats', [])
+                available_qualities = set()
+                for fmt in formats:
+                    height = fmt.get('height')
+                    if height:
+                        available_qualities.add(f"{height}p")
+
+            # تحديد الجودة المطلوبة
+            selected_format = None
+            for fmt in formats:
+                if fmt.get('height') == int(video_quality.replace("p", "")):
+                    selected_format = fmt['format_id']
+                    break
+
+            if not selected_format:
+                return "Error: The selected quality is not available for this video."
+
             ydl_opts = {
                 'format': selected_format,
                 'outtmpl': os.path.join(DOWNLOAD_PATH, f'video_{timestamp}.%(ext)s'),
@@ -59,7 +67,7 @@ def download_media(url, media_type='video', video_quality=None):
 
     except Exception as e:
         # معالجة الأخطاء الناتجة عن الروابط غير المدعومة
-        if "Cannot parse data" in str(e) or "Unsupported URL" in str(e):
+        if "Unsupported URL" in str(e) or "Cannot parse data" in str(e):
             return "Error: Unable to download the media. Please ensure the link is valid and try again later."
         return f"Error during download: {e}"
 
@@ -76,7 +84,7 @@ bot_state = BotState()
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     bot_state.__init__()  # إعادة تهيئة الحالة
     await update.message.reply_text(
-        "Welcome to the Media Downloader!\n\n"
+        "Welcome to the Universal Media Downloader!\n\n"
         "Please enter the URL of the media you want to download:",
         reply_markup=ReplyKeyboardRemove()
     )
@@ -96,17 +104,6 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     if bot_state.url is None:
         bot_state.url = text
-
-        # التحقق مما إذا كان الرابط مدعومًا
-        if not any(site in bot_state.url for site in SUPPORTED_SITES):
-            await update.message.reply_text(
-                "❌ The provided link is not supported. "
-                "Please use a link from one of the following supported sites: "
-                f"{', '.join(SUPPORTED_SITES)}."
-            )
-            bot_state.__init__()
-            return
-
         keyboard = [["🎧 Audio", "🎬 Video"], ["❌ Cancel"]]
         reply_markup = ReplyKeyboardMarkup(keyboard, resize_keyboard=True, one_time_keyboard=True)
         await update.message.reply_text("Choose media type:", reply_markup=reply_markup)
@@ -116,13 +113,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await update.message.reply_text("⏳ Downloading audio... Please wait.")
             file_path = download_media(bot_state.url, media_type='audio')
             if file_path.startswith("Error"):
-                await update.message.reply_text(
-                    "❌ Failed to download the media. Possible reasons:\n"
-                    "- The link may be invalid or unsupported.\n"
-                    "- The video may be private or restricted.\n"
-                    "- The website structure may have changed.\n\n"
-                    "Please ensure the link is valid and try again later."
-                )
+                await update.message.reply_text(file_path)
             else:
                 if os.path.exists(file_path):
                     await update.message.reply_text("✅ Audio downloaded successfully!")
@@ -134,33 +125,47 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
             bot_state.__init__()
         elif text.lower() in ['🎬 video', 'video']:
             bot_state.media_type = 'video'
-            # عرض أزرار الجودات الثابتة
-            keyboard = [
-                ["🎥 144p", "🎥 240p"],
-                ["🎥 360p", "🎥 480p"],
-                ["🎥 720p", "🎥 1080p"],
-                ["❌ Cancel"]
-            ]
-            reply_markup = ReplyKeyboardMarkup(keyboard, resize_keyboard=True, one_time_keyboard=True)
-            await update.message.reply_text("Select video quality:", reply_markup=reply_markup)
+            # استخراج الجودات المتاحة
+            try:
+                with yt_dlp.YoutubeDL() as ydl:
+                    info_dict = ydl.extract_info(bot_state.url, download=False)
+                    formats = info_dict.get('formats', [])
+                    available_qualities = set()
+                    for fmt in formats:
+                        height = fmt.get('height')
+                        if height:
+                            available_qualities.add(f"{height}p")
+
+                    if not available_qualities:
+                        await update.message.reply_text(
+                            "❌ No available qualities found for this video. "
+                            "Please try another link."
+                        )
+                        bot_state.__init__()
+                        return
+
+                    # عرض الجودات المتاحة
+                    keyboard = [[f"🎥 {q}"] for q in sorted(available_qualities, key=lambda x: int(x.replace("p", "")))]
+                    keyboard.append(["❌ Cancel"])
+                    reply_markup = ReplyKeyboardMarkup(keyboard, resize_keyboard=True, one_time_keyboard=True)
+                    await update.message.reply_text("Select video quality:", reply_markup=reply_markup)
+            except Exception as e:
+                await update.message.reply_text(
+                    "❌ Failed to extract video qualities. "
+                    "Please ensure the link is valid and try again later."
+                )
+                bot_state.__init__()
         else:
             await update.message.reply_text("Invalid choice. Please choose '🎧 Audio' or '🎬 Video'.")
     elif bot_state.video_quality is None:
-        # قائمة الجودات المدعومة
-        supported_qualities = ["144p", "240p", "360p", "480p", "720p", "1080p"]
-        selected_quality = text.replace("🎥 ", "")  # استخراج الجودة المختارة
-        if selected_quality in supported_qualities:
+        # استخراج الجودة المختارة
+        selected_quality = text.replace("🎥 ", "")
+        if selected_quality.endswith("p"):
             bot_state.video_quality = selected_quality
             await update.message.reply_text(f"⏳ Downloading video ({selected_quality})... Please wait.")
             file_path = download_media(bot_state.url, media_type='video', video_quality=bot_state.video_quality)
             if file_path.startswith("Error"):
-                await update.message.reply_text(
-                    "❌ Failed to download the media. Possible reasons:\n"
-                    "- The link may be invalid or unsupported.\n"
-                    "- The video may be private or restricted.\n"
-                    "- The website structure may have changed.\n\n"
-                    "Please ensure the link is valid and try again later."
-                )
+                await update.message.reply_text(file_path)
             else:
                 if os.path.exists(file_path):
                     await update.message.reply_text(f"✅ Video ({selected_quality}) downloaded successfully!")
