@@ -28,6 +28,9 @@ def progress_hook(d):
 def download_media(url, media_type='video', video_quality=None):
     timestamp = time.strftime("%Y%m%d-%H%M%S")
     try:
+        # التحقق من مصدر الرابط
+        is_tiktok = 'tiktok.com' in url.lower()
+
         if media_type == 'audio':
             ydl_opts = {
                 'format': 'bestaudio/best',
@@ -43,25 +46,39 @@ def download_media(url, media_type='video', video_quality=None):
                 'socket_timeout': 10,
             }
         elif media_type == 'video':
-            format_map = {
-                '144p': 'bestvideo[height<=144]+bestaudio/best',
-                '240p': 'bestvideo[height<=240]+bestaudio/best',
-                '360p': 'bestvideo[height<=360]+bestaudio/best',
-                '480p': 'bestvideo[height<=480]+bestaudio/best',
-                '720p': 'bestvideo[height<=720]+bestaudio/best',
-                '1080p': 'bestvideo[height<=1080]+bestaudio/best',
-            }
-            selected_format = format_map.get(video_quality, 'bestvideo+bestaudio/best')
-            ydl_opts = {
-                'format': selected_format,
-                'outtmpl': os.path.join(DOWNLOAD_PATH, f'video_{timestamp}.%(ext)s'),
-                'merge_output_format': 'mp4',
-                'logger': DownloadLogger(),
-                'progress_hooks': [progress_hook],
-                'retries': 5,
-                'fragment_retries': 5,
-                'socket_timeout': 10,
-            }
+            if is_tiktok:
+                # TikTok لا يدعم اختيار الجودة بشكل مباشر
+                ydl_opts = {
+                    'format': 'bestvideo+bestaudio/best',  # الجودة الافتراضية (الأعلى)
+                    'outtmpl': os.path.join(DOWNLOAD_PATH, f'video_{timestamp}.%(ext)s'),
+                    'merge_output_format': 'mp4',
+                    'logger': DownloadLogger(),
+                    'progress_hooks': [progress_hook],
+                    'retries': 5,
+                    'fragment_retries': 5,
+                    'socket_timeout': 10,
+                }
+            else:
+                # YouTube يدعم اختيار الجودة
+                format_map = {
+                    '144p': 'bestvideo[height<=144]+bestaudio/best',
+                    '240p': 'bestvideo[height<=240]+bestaudio/best',
+                    '360p': 'bestvideo[height<=360]+bestaudio/best',
+                    '480p': 'bestvideo[height<=480]+bestaudio/best',
+                    '720p': 'bestvideo[height<=720]+bestaudio/best',
+                    '1080p': 'bestvideo[height<=1080]+bestaudio/best',
+                }
+                selected_format = format_map.get(video_quality, 'bestvideo+bestaudio/best')
+                ydl_opts = {
+                    'format': selected_format,
+                    'outtmpl': os.path.join(DOWNLOAD_PATH, f'video_{timestamp}.%(ext)s'),
+                    'merge_output_format': 'mp4',
+                    'logger': DownloadLogger(),
+                    'progress_hooks': [progress_hook],
+                    'retries': 5,
+                    'fragment_retries': 5,
+                    'socket_timeout': 10,
+                }
         else:
             return "Invalid media type."
 
