@@ -19,7 +19,7 @@ class BotState:
 bot_state = BotState()
 
 # دالة تنزيل الوسائط مع رسائل تفاعلية
-async def download_media_with_progress(url, media_type='video', video_quality=None, update: Update, context: ContextTypes.DEFAULT_TYPE):
+async def download_media_with_progress(update: Update, context: ContextTypes.DEFAULT_TYPE, url, media_type='video', video_quality=None):
     timestamp = time.strftime("%Y%m%d-%H%M%S")
     progress_message = None
 
@@ -124,7 +124,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         if text.lower() in ['🎧 audio', 'audio']:
             bot_state.media_type = 'audio'
             await update.message.reply_text("⏳ Starting audio download...")
-            file_path = await download_media_with_progress(bot_state.url, media_type='audio', update=update, context=context)
+            file_path = await download_media_with_progress(update, context, bot_state.url, media_type='audio')
             if file_path.startswith("Error"):
                 await update.message.reply_text("❌ Failed to download the media. Please check the link and try again.")
             else:
@@ -155,7 +155,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         if text in [f"🎥 {q}" for q in supported_qualities]:
             bot_state.video_quality = text.replace("🎥 ", "")  # استخراج الجودة المختارة
             await update.message.reply_text(f"⏳ Starting video download ({text})...")
-            file_path = await download_media_with_progress(bot_state.url, media_type='video', video_quality=bot_state.video_quality, update=update, context=context)
+            file_path = await download_media_with_progress(update, context, bot_state.url, media_type='video', video_quality=bot_state.video_quality)
             if file_path.startswith("Error"):
                 await update.message.reply_text("❌ Failed to download the media. Please check the link and try again.")
             else:
