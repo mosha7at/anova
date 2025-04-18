@@ -1,5 +1,6 @@
 import os
 import yt_dlp
+import time  # إضافة هذه السطر
 from telegram import Update, ReplyKeyboardMarkup, ReplyKeyboardRemove
 from telegram.ext import Application, CommandHandler, MessageHandler, filters, ContextTypes
 
