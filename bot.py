@@ -32,12 +32,10 @@ def track_user(user_id, username, first_name):
     """Track a user who interacted with the bot"""
     users_data = load_users()
     
-    # Check if user already exists
     if str(user_id) not in users_data['users']:
         users_data['users'].append(str(user_id))
         users_data['total_count'] = len(users_data['users'])
     
-    # Update user details
     user_info = {
         'username': username or '',
         'first_name': first_name or '',
@@ -68,83 +66,49 @@ def download_media(url, media_type='video', video_quality=None):
                 'noplaylist': True,
             }
         elif media_type == 'video':
-            # First extract info to check available formats
             with yt_dlp.YoutubeDL({'quiet': True}) as ydl:
                 info = ydl.extract_info(url, download=False)
                 formats = info.get('formats', [])
-                
-                # Get all available heights and filter out None values
                 available_heights = sorted(set(f.get('height', 0) for f in formats if f.get('height')))
                 
-                # Get video title for feedback
-                video_title = info.get('title', 'Unknown Title')
-                
-                # Parse requested height
                 requested_height = int(video_quality.replace('p', ''))
                 
-                # Find target height based on availability
                 if available_heights:
-                    # Exact match
-                    if requested_height in available_heights:
-                        target_height = requested_height
+                    higher_qualities = [h for h in available_heights if h >= requested_height]
+                    lower_qualities = [h for h in available_heights if h <= requested_height]
+                    
+                    if higher_qualities:
+                        target_height = min(higher_qualities)
+                    elif lower_qualities:
+                        target_height = max(lower_qualities)
                     else:
-                        # Try to get closest available quality
-                        # First preference: closest higher quality (better experience)
-                        higher_qualities = [h for h in available_heights if h >= requested_height]
-                        lower_qualities = [h for h in available_heights if h <= requested_height]
-                        
-                        if higher_qualities:
-                            target_height = min(higher_qualities)  # Get lowest higher quality
-                        elif lower_qualities:
-                            target_height = max(lower_qualities)  # Get highest lower quality
-                        else:
-                            target_height = available_heights[0]  # Fallback to any available
+                        target_height = available_heights[0]
                 else:
-                    # If we can't determine heights, use general format specification
-                    return f"Using best available quality for: {video_title}", None, {
-                        'format': 'best',
-                        'outtmpl': os.path.join(DOWNLOAD_PATH, f'video_{timestamp}.%(ext)s'),
-                        'noplaylist': True,
-                    }
-                
-                # Return info for user feedback
-                return (
-                    f"Title: {video_title}\n"
-                    f"Requested: {requested_height}p\n"
-                    f"Available: {', '.join(f'{h}p' for h in available_heights)}\n"
-                    f"Selected: {target_height}p"
-                ), target_height, {
-                    'format': f'bestvideo[height<={target_height}]+bestaudio/best[height<={target_height}]/best',
-                    'outtmpl': os.path.join(DOWNLOAD_PATH, f'video_{timestamp}.%(ext)s'),
-                    'noplaylist': True,
-                }
-        else:
-            return "Error: Invalid media type.", None, None
+                    target_height = requested_height
 
-        # If it's audio or we couldn't get format info, use the options directly
-        if media_type == 'audio' or 'ydl_opts' in locals():
-            with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-                info_dict = ydl.extract_info(url, download=True)
-                file_name = ydl.prepare_filename(info_dict)
-                
-                if media_type == 'audio':
-                    converted_file = os.path.splitext(file_name)[0] + '.mp3'
-                    if os.path.exists(converted_file):
-                        return f"Successfully downloaded audio: {info_dict.get('title', 'Unknown')}", None, converted_file
-                    return "Error: Audio conversion failed.", None, None
-                return f"Successfully downloaded: {info_dict.get('title', 'Unknown')}", None, file_name
+            ydl_opts = {
+                'format': f'bestvideo[height<={target_height}]+bestaudio/best[height<={target_height}]/best',
+                'outtmpl': os.path.join(DOWNLOAD_PATH, f'video_{timestamp}.%(ext)s'),
+                'noplaylist': True,
+            }
         else:
-            # For video with format info
-            message, target_height, ydl_opts = download_media(url, media_type, video_quality)
-            with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-                info_dict = ydl.extract_info(url, download=True)
-                file_name = ydl.prepare_filename(info_dict)
-                return message, target_height, file_name
+            return "Error: Invalid media type.", None
+
+        with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+            info_dict = ydl.extract_info(url, download=True)
+            file_name = ydl.prepare_filename(info_dict)
+            
+            if media_type == 'audio':
+                converted_file = os.path.splitext(file_name)[0] + '.mp3'
+                if os.path.exists(converted_file):
+                    return f"Successfully downloaded audio: {info_dict.get('title', 'Unknown')}", converted_file
+                return "Error: Audio conversion failed.", None
+            return f"Successfully downloaded: {info_dict.get('title', 'Unknown')}", file_name
 
     except Exception as e:
         if "Unsupported URL" in str(e) or "Cannot parse data" in str(e):
-            return "Error: Unable to download the media. Please ensure the link is valid and try again later.", None, None
-        return f"Error during download: {e}", None, None
+            return "Error: Unable to download the media. Please ensure the link is valid and try again later.", None
+        return f"Error during download: {e}", None
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Start command handler"""
@@ -160,7 +124,6 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def stats(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Admin command to show bot statistics"""
-    # You can add admin verification here if needed
     user_count = get_user_count()
     await update.message.reply_text(
         f"📊 Bot Statistics\n\n"
@@ -184,19 +147,17 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     user_data = context.user_data
     if 'url' not in user_data:
-        # Step 1: URL input
         user_data['url'] = text
         keyboard = [["🎧 Audio", "🎬 Video"], ["❌ Cancel"]]
         reply_markup = ReplyKeyboardMarkup(keyboard, resize_keyboard=True, one_time_keyboard=True)
         await update.message.reply_text("Choose media type:", reply_markup=reply_markup)
     
     elif 'media_type' not in user_data:
-        # Step 2: Media type selection
         if text.lower() in ['🎧 audio', 'audio']:
             user_data['media_type'] = 'audio'
             status_message = await update.message.reply_text("⏳ Downloading audio... Please wait.")
             
-            message, _, file_path = download_media(user_data['url'], media_type='audio')
+            message, file_path = download_media(user_data['url'], media_type='audio')
             
             if "Error" in message:
                 await status_message.edit_text(f"❌ {message}")
@@ -225,15 +186,14 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await update.message.reply_text("Invalid choice. Please choose '🎧 Audio' or '🎬 Video'.")
     
     elif 'video_quality' not in user_data:
-        # Step 3: Video quality selection
         supported_qualities = ["144p", "240p", "360p", "480p", "720p", "1080p"]
         if text in [f"🎥 {q}" for q in supported_qualities]:
             selected_quality = text.replace("🎥 ", "")
             user_data['video_quality'] = selected_quality
             
-            status_message = await update.message.reply_text(f"⏳ Analyzing available qualities... Please wait.")
+            status_message = await update.message.reply_text("⏳ Downloading video... Please wait.")
             
-            message, actual_quality, file_path = download_media(
+            message, file_path = download_media(
                 user_data['url'], 
                 media_type='video', 
                 video_quality=selected_quality
@@ -242,11 +202,8 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
             if "Error" in message:
                 await status_message.edit_text(f"❌ {message}")
             else:
-                downloading_message = f"⏳ Downloading video...\n\n{message}"
-                await status_message.edit_text(downloading_message)
-                
+                await status_message.edit_text(f"✅ {message}")
                 if file_path and os.path.exists(file_path):
-                    await status_message.edit_text(f"✅ Download complete!\n\n{message}")
                     with open(file_path, 'rb') as file:
                         await update.message.reply_video(file)
                     os.remove(file_path)
