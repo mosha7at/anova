@@ -106,9 +106,10 @@ def download_media(url, media_type='video', video_quality=None):
             return f"Successfully downloaded: {info_dict.get('title', 'Unknown')}", file_name
 
     except Exception as e:
-        if "Unsupported URL" in str(e) or "Cannot parse data" in str(e):
-            return "Error: Unable to download the media. Please ensure the link is valid and try again later.", None
-        return f"Error during download: {e}", None
+        error_message = str(e)
+        if "is not a valid URL" in error_message or "Unsupported URL" in error_message:
+            return "❌ تحقق من الرابط. يبدو أن الرابط الذي أدخلته غير صالح.", None
+        return f"❌ Error during download: {error_message}", None
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Start command handler"""
