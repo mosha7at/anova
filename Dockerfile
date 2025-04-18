@@ -19,4 +19,4 @@ COPY . .
 RUN mkdir -p downloads
 
 # Run the bot
-CMD ["python", "main.py"]
+CMD ["python", "bot.py"]
