@@ -13,10 +13,6 @@ if not os.path.exists(DOWNLOAD_PATH):
 def download_media(url, media_type='video', video_quality=None):
     timestamp = time.strftime("%Y%m%d-%H%M%S")
     try:
-        # إضافة معالجة خاصة لروابط Facebook
-        if "facebook" in url.lower():
-            return "Error: Facebook links are currently not supported due to platform restrictions."
-
         if media_type == 'audio':
             ydl_opts = {
                 'format': 'bestaudio/best',
@@ -129,7 +125,16 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await update.message.reply_text(f"⏳ Downloading video ({text})... Please wait.")
             file_path = download_media(user_data['url'], media_type='video', video_quality=user_data['video_quality'])
             if file_path.startswith("Error"):
-                await update.message.reply_text(file_path)
+                await update.message.reply_text("❌ The selected quality is not available. Please choose another quality.")
+                # إعادة طلب اختيار الجودة
+                keyboard = [
+                    ["🎥 144p", "🎥 240p"],
+                    ["🎥 360p", "🎥 480p"],
+                    ["🎥 720p", "🎥 1080p"],
+                    ["❌ Cancel"]
+                ]
+                reply_markup = ReplyKeyboardMarkup(keyboard, resize_keyboard=True, one_time_keyboard=True)
+                await update.message.reply_text("Select video quality:", reply_markup=reply_markup)
             else:
                 if os.path.exists(file_path):
                     await update.message.reply_text(f"✅ Video ({text}) downloaded successfully!")
@@ -138,7 +143,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
                     os.remove(file_path)  # حذف الملف بعد الإرسال
                 else:
                     await update.message.reply_text("❌ File not found after download. Please try again.")
-            context.user_data.clear()
+                context.user_data.clear()
         else:
             await update.message.reply_text("Invalid video quality choice. Please select a valid option.")
 
