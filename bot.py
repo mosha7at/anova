@@ -1,15 +1,14 @@
 import os
 import yt_dlp
-import time
 from telegram import Update, ReplyKeyboardMarkup, ReplyKeyboardRemove
 from telegram.ext import Application, CommandHandler, MessageHandler, filters, ContextTypes
 
-# تحديد مسار التنزيل (داخل المشروع بدلاً من /tmp/)
+# تحديد مسار التنزيل (داخل المشروع)
 DOWNLOAD_PATH = os.path.join(os.getcwd(), 'downloads')
 if not os.path.exists(DOWNLOAD_PATH):
     os.makedirs(DOWNLOAD_PATH)
 
-# دالة تنزيل الملفات باستخدام yt-dlp
+# دالة تنزيل الوسائط باستخدام yt-dlp
 def download_media(url, media_type='video', video_quality=None):
     timestamp = time.strftime("%Y%m%d-%H%M%S")
     try:
@@ -23,6 +22,7 @@ def download_media(url, media_type='video', video_quality=None):
                 }],
             }
         elif media_type == 'video':
+            # إنشاء خريطة للجودات بناءً على ارتفاع الفيديو
             format_map = {
                 '144p': 'bestvideo[height<=144]+bestaudio/best',
                 '240p': 'bestvideo[height<=240]+bestaudio/best',
@@ -54,22 +54,16 @@ def download_media(url, media_type='video', video_quality=None):
                 return file_name
 
     except Exception as e:
+        # معالجة الأخطاء الناتجة عن الروابط غير المدعومة
+        if "Unsupported URL" in str(e) or "Cannot parse data" in str(e):
+            return "Error: Unable to download the media. Please ensure the link is valid and try again later."
         return f"Error during download: {e}"
-
-# حالة البوت
-class BotState:
-    def __init__(self):
-        self.url = None
-        self.media_type = None
-        self.video_quality = None
-
-bot_state = BotState()
 
 # استجابة لأمر /start
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    bot_state.__init__()  # إعادة تهيئة الحالة
+    context.user_data.clear()  # إعادة تهيئة حالة المستخدم
     await update.message.reply_text(
-        "Welcome to the Media Downloader!\n\n"
+        "Welcome to the Universal Media Downloader!\n\n"
         "Please enter the URL of the media you want to download:",
         reply_markup=ReplyKeyboardRemove()
     )
@@ -80,25 +74,26 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     # إذا تم الضغط على زر "Cancel"
     if text.lower() in ['cancel', 'close', '❌ cancel']:
-        bot_state.__init__()
+        context.user_data.clear()
         await update.message.reply_text(
             "Operation canceled. Please enter a new URL to start again.",
             reply_markup=ReplyKeyboardRemove()
         )
         return
 
-    if bot_state.url is None:
-        bot_state.url = text
+    user_data = context.user_data
+    if 'url' not in user_data:
+        user_data['url'] = text
         keyboard = [["🎧 Audio", "🎬 Video"], ["❌ Cancel"]]
         reply_markup = ReplyKeyboardMarkup(keyboard, resize_keyboard=True, one_time_keyboard=True)
         await update.message.reply_text("Choose media type:", reply_markup=reply_markup)
-    elif bot_state.media_type is None:
+    elif 'media_type' not in user_data:
         if text.lower() in ['🎧 audio', 'audio']:
-            bot_state.media_type = 'audio'
+            user_data['media_type'] = 'audio'
             await update.message.reply_text("⏳ Downloading audio... Please wait.")
-            file_path = download_media(bot_state.url, media_type='audio')
+            file_path = download_media(user_data['url'], media_type='audio')
             if file_path.startswith("Error"):
-                await update.message.reply_text("❌ Failed to download the media. Please check the link and try again.")
+                await update.message.reply_text(file_path)
             else:
                 if os.path.exists(file_path):
                     await update.message.reply_text("✅ Audio downloaded successfully!")
@@ -107,9 +102,9 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
                     os.remove(file_path)  # حذف الملف بعد الإرسال
                 else:
                     await update.message.reply_text("❌ File not found after download. Please try again.")
-            bot_state.__init__()
+            context.user_data.clear()
         elif text.lower() in ['🎬 video', 'video']:
-            bot_state.media_type = 'video'
+            user_data['media_type'] = 'video'
             # عرض أزرار الجودات الثابتة
             keyboard = [
                 ["🎥 144p", "🎥 240p"],
@@ -121,15 +116,15 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await update.message.reply_text("Select video quality:", reply_markup=reply_markup)
         else:
             await update.message.reply_text("Invalid choice. Please choose '🎧 Audio' or '🎬 Video'.")
-    elif bot_state.video_quality is None:
+    elif 'video_quality' not in user_data:
         # قائمة الجودات المدعومة
         supported_qualities = ["144p", "240p", "360p", "480p", "720p", "1080p"]
         if text in [f"🎥 {q}" for q in supported_qualities]:
-            bot_state.video_quality = text.replace("🎥 ", "")  # استخراج الجودة المختارة
+            user_data['video_quality'] = text.replace("🎥 ", "")  # استخراج الجودة المختارة
             await update.message.reply_text(f"⏳ Downloading video ({text})... Please wait.")
-            file_path = download_media(bot_state.url, media_type='video', video_quality=bot_state.video_quality)
+            file_path = download_media(user_data['url'], media_type='video', video_quality=user_data['video_quality'])
             if file_path.startswith("Error"):
-                await update.message.reply_text("❌ Failed to download the media. Please check the link and try again.")
+                await update.message.reply_text(file_path)
             else:
                 if os.path.exists(file_path):
                     await update.message.reply_text(f"✅ Video ({text}) downloaded successfully!")
@@ -138,7 +133,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
                     os.remove(file_path)  # حذف الملف بعد الإرسال
                 else:
                     await update.message.reply_text("❌ File not found after download. Please try again.")
-            bot_state.__init__()
+            context.user_data.clear()
         else:
             await update.message.reply_text("Invalid video quality choice. Please select a valid option.")
 
