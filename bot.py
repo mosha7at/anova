@@ -63,18 +63,20 @@ def download_media(url, media_type='video', video_quality=None):
             
             # Parse the requested quality (e.g., "720p" -> 720)
             requested_height = int(video_quality.replace('p', '')) if video_quality else None
-            
+
             # Find the closest available height to the requested quality
             if requested_height:
                 higher_qualities = [h for h in available_heights if h >= requested_height]
                 lower_qualities = [h for h in available_heights if h <= requested_height]
-                
+
                 if higher_qualities:
                     target_height = min(higher_qualities)
                 elif lower_qualities:
                     target_height = max(lower_qualities)
                 else:
-                    target_height = available_heights[0]  # Default to the lowest available quality
+                    # If no match found, return available qualities
+                    available_qualities = [f"{h}p" for h in available_heights if h > 0]
+                    return f"❌ Error: Requested quality '{video_quality}' not available.\nAvailable qualities: {', '.join(available_qualities)}", None
             else:
                 target_height = max(available_heights)  # Default to the highest available quality
 
@@ -166,6 +168,10 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
             message, file_path = download_media(user_data['url'], media_type='audio')
             
             if "Error" in message:
+                if "Available qualities" in message:
+                    # Show available qualities and ask the user to choose again
+                    await status_message.edit_text(message)
+                    return
                 await status_message.edit_text(f"❌ {message}")
             else:
                 await status_message.edit_text(f"✅ {message}")
@@ -206,6 +212,10 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
             )
             
             if "Error" in message:
+                if "Available qualities" in message:
+                    # Show available qualities and ask the user to choose again
+                    await status_message.edit_text(message)
+                    return
                 await status_message.edit_text(f"❌ {message}")
             else:
                 await status_message.edit_text(f"✅ {message}")
