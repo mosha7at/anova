@@ -1,6 +1,7 @@
 import os
 import time
 import json
+import requests
 from telegram import Update, ReplyKeyboardMarkup, ReplyKeyboardRemove
 from telegram.ext import Application, CommandHandler, MessageHandler, filters, ContextTypes
 from TikTokApi import TikTokApi
@@ -51,6 +52,15 @@ def get_user_count():
     users_data = load_users()
     return users_data['total_count']
 
+def resolve_url(url):
+    """Resolve shortened URLs to their final destination"""
+    try:
+        response = requests.head(url, allow_redirects=True)
+        return response.url
+    except Exception as e:
+        print(f"Error resolving URL: {e}")
+        return None
+
 def download_tiktok_video(video_id):
     """Download TikTok video using TikTokApi"""
     api = TikTokApi()
@@ -96,13 +106,20 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
         return
 
-    # Extract video ID from the URL
-    if "tiktok.com" not in text:
+    # Resolve shortened URLs
+    resolved_url = resolve_url(text)
+    if not resolved_url:
+        await update.message.reply_text("❌ Unable to resolve the provided URL.")
+        return
+
+    # Check if the resolved URL is a valid TikTok link
+    if "tiktok.com" not in resolved_url:
         await update.message.reply_text("❌ Invalid TikTok URL. Please provide a valid TikTok video link.")
         return
 
+    # Extract video ID from the resolved URL
     try:
-        video_id = text.split("/video/")[1].split("?")[0]
+        video_id = resolved_url.split("/video/")[1].split("?")[0]
     except IndexError:
         await update.message.reply_text("❌ Unable to extract video ID from the provided URL.")
         return
