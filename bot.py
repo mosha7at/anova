@@ -51,6 +51,20 @@ def get_user_count():
     users_data = load_users()
     return users_data['total_count']
 
+def get_available_qualities(url):
+    """Get available video qualities for a given URL"""
+    try:
+        with yt_dlp.YoutubeDL({'quiet': True}) as ydl:
+            info = ydl.extract_info(url, download=False)
+            formats = info.get('formats', [])
+            
+            # Extract available heights (qualities)
+            available_heights = sorted(set(f.get('height', 0) for f in formats if f.get('height')))
+            available_qualities = [f"{h}p" for h in available_heights if h > 0]
+            return available_qualities
+    except Exception as e:
+        return []
+
 def download_media(url, media_type='video', video_quality=None):
     """Download media from URL with specified quality options"""
     timestamp = time.strftime("%Y%m%d-%H%M%S")
@@ -171,7 +185,6 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
             
             if "Error" in message:
                 if "Available qualities" in message:
-                    # Show available qualities and ask the user to choose again
                     await status_message.edit_text(message)
                     return
                 await status_message.edit_text(f"❌ {message}")
@@ -187,12 +200,20 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         
         elif text.lower() in ['🎬 video', 'video']:
             user_data['media_type'] = 'video'
-            keyboard = [
-                ["🎥 144p", "🎥 240p"],
-                ["🎥 360p", "🎥 480p"],
-                ["🎥 720p", "🎥 1080p"],
-                ["❌ Cancel"]
-            ]
+            available_qualities = get_available_qualities(user_data['url'])
+            if not available_qualities:
+                await update.message.reply_text("❌ Unable to fetch available qualities. Please try again later.")
+                return
+            
+            # Create keyboard with available qualities
+            keyboard = []
+            for i in range(0, len(available_qualities), 2):
+                row = [f"🎥 {available_qualities[i]}"]
+                if i + 1 < len(available_qualities):
+                    row.append(f"🎥 {available_qualities[i + 1]}")
+                keyboard.append(row)
+            keyboard.append(["❌ Cancel"])
+            
             reply_markup = ReplyKeyboardMarkup(keyboard, resize_keyboard=True, one_time_keyboard=True)
             await update.message.reply_text("Select video quality:", reply_markup=reply_markup)
         
@@ -200,8 +221,8 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await update.message.reply_text("Invalid choice. Please choose '🎧 Audio' or '🎬 Video'.")
     
     elif 'video_quality' not in user_data:
-        supported_qualities = ["144p", "240p", "360p", "480p", "720p", "1080p"]
-        if text in [f"🎥 {q}" for q in supported_qualities]:
+        available_qualities = get_available_qualities(user_data['url'])
+        if text in [f"🎥 {q}" for q in available_qualities]:
             selected_quality = text.replace("🎥 ", "")
             user_data['video_quality'] = selected_quality
             
@@ -214,10 +235,6 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
             )
             
             if "Error" in message:
-                if "Available qualities" in message:
-                    # Show available qualities and ask the user to choose again
-                    await status_message.edit_text(message)
-                    return
                 await status_message.edit_text(f"❌ {message}")
             else:
                 await status_message.edit_text(f"✅ {message}")
