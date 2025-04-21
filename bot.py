@@ -59,8 +59,11 @@ def download_media(url, media_type='video', video_quality=None):
         with yt_dlp.YoutubeDL({'quiet': True}) as ydl:
             info = ydl.extract_info(url, download=False)
             formats = info.get('formats', [])
-            available_heights = sorted(set(f.get('height', 0) for f in formats if f.get('height')))
             
+            # Get available qualities (heights)
+            available_heights = sorted(set(f.get('height', 0) for f in formats if f.get('height')))
+            available_qualities = [f"{h}p" for h in available_heights if h > 0]
+
             # Parse the requested quality (e.g., "720p" -> 720)
             requested_height = int(video_quality.replace('p', '')) if video_quality else None
 
@@ -75,7 +78,6 @@ def download_media(url, media_type='video', video_quality=None):
                     target_height = max(lower_qualities)
                 else:
                     # If no match found, return available qualities
-                    available_qualities = [f"{h}p" for h in available_heights if h > 0]
                     return f"❌ Error: Requested quality '{video_quality}' not available.\nAvailable qualities: {', '.join(available_qualities)}", None
             else:
                 target_height = max(available_heights)  # Default to the highest available quality
