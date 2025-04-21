@@ -31,18 +31,15 @@ def save_users(users_data):
 def track_user(user_id, username, first_name):
     """Track a user who interacted with the bot"""
     users_data = load_users()
-    
     if str(user_id) not in users_data['users']:
         users_data['users'].append(str(user_id))
         users_data['total_count'] = len(users_data['users'])
-    
     user_info = {
         'username': username or '',
         'first_name': first_name or '',
         'last_activity': time.strftime("%Y-%m-%d %H:%M:%S")
     }
     users_data[str(user_id)] = user_info
-    
     save_users(users_data)
     return users_data['total_count']
 
@@ -57,7 +54,6 @@ def get_available_qualities(url):
         with yt_dlp.YoutubeDL({'quiet': True}) as ydl:
             info = ydl.extract_info(url, download=False)
             formats = info.get('formats', [])
-            
             # Extract available heights (qualities)
             available_heights = sorted(set(f.get('height', 0) for f in formats if f.get('height')))
             available_qualities = [f"{h}p" for h in available_heights if h > 0]
@@ -69,10 +65,9 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Start command handler"""
     user = update.effective_user
     track_user(user.id, user.username, user.first_name)
-    
     context.user_data.clear()
     await update.message.reply_text(
-        f"Welcome to the Universal Media Downloader, {user.first_name}! 👋\n\n"
+        f"Welcome to the Universal Media Downloader, {user.first_name}! 👋\n"
         "Please enter the URL of the media you want to download:",
         reply_markup=ReplyKeyboardRemove()
     )
@@ -81,7 +76,7 @@ async def stats(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Admin command to show bot statistics"""
     user_count = get_user_count()
     await update.message.reply_text(
-        f"📊 Bot Statistics\n\n"
+        f"📊 Bot Statistics\n"
         f"Total Users: {user_count}"
     )
 
@@ -89,9 +84,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Handle incoming messages"""
     user = update.effective_user
     track_user(user.id, user.username, user.first_name)
-    
     text = update.message.text.strip()
-
     if text.lower() in ['cancel', 'close', '❌ cancel']:
         context.user_data.clear()
         await update.message.reply_text(
@@ -101,23 +94,19 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
 
     user_data = context.user_data
+
     if 'url' not in user_data:
         user_data['url'] = text
         keyboard = [["🎧 Audio", "🎬 Video"], ["❌ Cancel"]]
         reply_markup = ReplyKeyboardMarkup(keyboard, resize_keyboard=True, one_time_keyboard=True)
         await update.message.reply_text("Choose media type:", reply_markup=reply_markup)
-    
+
     elif 'media_type' not in user_data:
         if text.lower() in ['🎧 audio', 'audio']:
             user_data['media_type'] = 'audio'
             status_message = await update.message.reply_text("⏳ Downloading audio... Please wait.")
-            
             message, file_path = download_media(user_data['url'], media_type='audio')
-            
             if "Error" in message:
-                if "Available qualities" in message:
-                    await status_message.edit_text(message)
-                    return
                 await status_message.edit_text(f"❌ {message}")
             else:
                 await status_message.edit_text(f"✅ {message}")
@@ -128,10 +117,13 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 else:
                     await update.message.reply_text("❌ File not found after download. Please try again.")
             context.user_data.clear()
-        
+
         elif text.lower() in ['🎬 video', 'video']:
             user_data['media_type'] = 'video'
-            
+
+            # Send a temporary message to inform the user about waiting for quality options
+            await update.message.reply_text("⏳ الرجاء الانتظار بينما نقوم بتحميل الجودات المتاحة...")
+
             # Fetch available qualities only once
             if 'available_qualities' not in user_data:
                 available_qualities = get_available_qualities(user_data['url'])
@@ -139,7 +131,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
                     await update.message.reply_text("❌ Unable to fetch available qualities. Please try again later.")
                     return
                 user_data['available_qualities'] = available_qualities
-            
+
             # Create keyboard with available qualities
             keyboard = []
             for i in range(0, len(user_data['available_qualities']), 2):
@@ -148,27 +140,23 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
                     row.append(f"🎥 {user_data['available_qualities'][i + 1]}")
                 keyboard.append(row)
             keyboard.append(["❌ Cancel"])
-            
             reply_markup = ReplyKeyboardMarkup(keyboard, resize_keyboard=True, one_time_keyboard=True)
             await update.message.reply_text("Select video quality:", reply_markup=reply_markup)
-        
+
         else:
             await update.message.reply_text("Invalid choice. Please choose '🎧 Audio' or '🎬 Video'.")
-    
+
     elif 'video_quality' not in user_data:
         available_qualities = user_data.get('available_qualities', [])
         if text in [f"🎥 {q}" for q in available_qualities]:
             selected_quality = text.replace("🎥 ", "")
             user_data['video_quality'] = selected_quality
-            
             status_message = await update.message.reply_text("⏳ Downloading video... Please wait.")
-            
             message, file_path = download_media(
                 user_data['url'], 
                 media_type='video', 
                 video_quality=selected_quality
             )
-            
             if "Error" in message:
                 await status_message.edit_text(f"❌ {message}")
             else:
@@ -180,7 +168,6 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 else:
                     await status_message.edit_text("❌ File not found after download. Please try again.")
             context.user_data.clear()
-        
         else:
             await update.message.reply_text("Invalid video quality choice. Please select a valid option.")
 
@@ -192,26 +179,26 @@ def download_media(url, media_type='video', video_quality=None):
         with yt_dlp.YoutubeDL({'quiet': True}) as ydl:
             info = ydl.extract_info(url, download=False)
             formats = info.get('formats', [])
-            
             # Get available qualities (heights)
             available_heights = sorted(set(f.get('height', 0) for f in formats if f.get('height')))
             available_qualities = [f"{h}p" for h in available_heights if h > 0]
-
             # Parse the requested quality (e.g., "720p" -> 720)
             requested_height = int(video_quality.replace('p', '')) if video_quality else None
-
             # Find the closest available height to the requested quality
             if requested_height:
                 higher_qualities = [h for h in available_heights if h >= requested_height]
                 lower_qualities = [h for h in available_heights if h <= requested_height]
-
                 if higher_qualities:
                     target_height = min(higher_qualities)
                 elif lower_qualities:
                     target_height = max(lower_qualities)
                 else:
                     # If no match found, return available qualities
-                    return f"❌ Error: Requested quality '{video_quality}' not available.\nAvailable qualities: {', '.join(available_qualities)}", None
+                    return (
+                        f"❌ Error: Requested quality '{video_quality}' not available.\n"
+                        f"Available qualities: {', '.join(available_qualities)}",
+                        None
+                    )
             else:
                 target_height = max(available_heights)  # Default to the highest available quality
 
@@ -238,15 +225,12 @@ def download_media(url, media_type='video', video_quality=None):
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
             info_dict = ydl.extract_info(url, download=True)
             file_name = ydl.prepare_filename(info_dict)
-            
             if media_type == 'audio':
                 converted_file = os.path.splitext(file_name)[0] + '.mp3'
                 if os.path.exists(converted_file):
                     return f"Successfully downloaded audio: {info_dict.get('title', 'Unknown')}", converted_file
                 return "Error: Audio conversion failed.", None
-            
             return f"Successfully downloaded: {info_dict.get('title', 'Unknown')}", file_name
-
     except Exception as e:
         error_message = str(e)
         if "is not a valid URL" in error_message or "Unsupported URL" in error_message:
@@ -258,12 +242,10 @@ def main():
     API_TOKEN = os.getenv('API_TOKEN')
     if not API_TOKEN:
         raise ValueError("API_TOKEN is not set in environment variables.")
-
     application = Application.builder().token(API_TOKEN).build()
     application.add_handler(CommandHandler("start", start))
     application.add_handler(CommandHandler("stats", stats))
     application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
-    
     print("Bot started!")
     application.run_polling()
 
