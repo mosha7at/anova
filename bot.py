@@ -54,11 +54,17 @@ def get_available_qualities(url):
         with yt_dlp.YoutubeDL({'quiet': True}) as ydl:
             info = ydl.extract_info(url, download=False)
             formats = info.get('formats', [])
+            # Filter formats that have both video and audio
+            available_formats = [
+                f for f in formats
+                if f.get('height') and f.get('vcodec') != 'none' and f.get('acodec') != 'none'
+            ]
             # Extract available heights (qualities) and filter out qualities below 144p
-            available_heights = sorted(set(f.get('height', 0) for f in formats if f.get('height') and f.get('height') >= 144))
+            available_heights = sorted(set(f.get('height', 0) for f in available_formats if f.get('height') >= 144))
             available_qualities = [f"{h}p" for h in available_heights if h > 0]
             return available_qualities
     except Exception as e:
+        print(f"Error fetching qualities: {e}")
         return []
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -179,8 +185,13 @@ def download_media(url, media_type='video', video_quality=None):
         with yt_dlp.YoutubeDL({'quiet': True}) as ydl:
             info = ydl.extract_info(url, download=False)
             formats = info.get('formats', [])
+            # Filter formats that have both video and audio
+            available_formats = [
+                f for f in formats
+                if f.get('height') and f.get('vcodec') != 'none' and f.get('acodec') != 'none'
+            ]
             # Get available qualities (heights) and filter out qualities below 144p
-            available_heights = sorted(set(f.get('height', 0) for f in formats if f.get('height') and f.get('height') >= 144))
+            available_heights = sorted(set(f.get('height', 0) for f in available_formats if f.get('height') >= 144))
             available_qualities = [f"{h}p" for h in available_heights if h > 0]
 
             # Parse the requested quality (e.g., "720p" -> 720)
@@ -189,8 +200,8 @@ def download_media(url, media_type='video', video_quality=None):
             # Find the closest available height to the requested quality
             if requested_height:
                 matching_formats = [
-                    f for f in formats
-                    if f.get('height') == requested_height and f.get('vcodec') != 'none' and f.get('acodec') != 'none'
+                    f for f in available_formats
+                    if f.get('height') == requested_height
                 ]
                 if not matching_formats:
                     return (
