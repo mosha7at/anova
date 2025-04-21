@@ -182,23 +182,24 @@ def download_media(url, media_type='video', video_quality=None):
             # Get available qualities (heights) and filter out qualities below 144p
             available_heights = sorted(set(f.get('height', 0) for f in formats if f.get('height') and f.get('height') >= 144))
             available_qualities = [f"{h}p" for h in available_heights if h > 0]
+
             # Parse the requested quality (e.g., "720p" -> 720)
             requested_height = int(video_quality.replace('p', '')) if video_quality else None
+
             # Find the closest available height to the requested quality
             if requested_height:
-                higher_qualities = [h for h in available_heights if h >= requested_height]
-                lower_qualities = [h for h in available_heights if h <= requested_height]
-                if higher_qualities:
-                    target_height = min(higher_qualities)
-                elif lower_qualities:
-                    target_height = max(lower_qualities)
-                else:
-                    # If no match found, return available qualities
+                matching_formats = [
+                    f for f in formats
+                    if f.get('height') == requested_height and f.get('vcodec') != 'none' and f.get('acodec') != 'none'
+                ]
+                if not matching_formats:
                     return (
                         f"❌ Error: Requested quality '{video_quality}' not available.\n"
                         f"Available qualities: {', '.join(available_qualities)}",
                         None
                     )
+                target_format = matching_formats[0]  # Choose the first matching format
+                target_height = target_format['height']
             else:
                 target_height = max(available_heights)  # Default to the highest available quality
 
