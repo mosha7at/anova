@@ -54,8 +54,8 @@ def get_available_qualities(url):
         with yt_dlp.YoutubeDL({'quiet': True}) as ydl:
             info = ydl.extract_info(url, download=False)
             formats = info.get('formats', [])
-            # Extract available heights (qualities)
-            available_heights = sorted(set(f.get('height', 0) for f in formats if f.get('height')))
+            # Extract available heights (qualities) and filter out qualities below 144p
+            available_heights = sorted(set(f.get('height', 0) for f in formats if f.get('height') and f.get('height') >= 144))
             available_qualities = [f"{h}p" for h in available_heights if h > 0]
             return available_qualities
     except Exception as e:
@@ -121,8 +121,8 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         elif text.lower() in ['🎬 video', 'video']:
             user_data['media_type'] = 'video'
 
-            # Send a temporary message to inform the user about waiting for quality options
-            await update.message.reply_text("⏳ الرجاء الانتظار بينما نقوم بتحميل الجودات المتاحة...")
+            # Send a temporary message in English to inform the user about waiting for quality options
+            await update.message.reply_text("⏳ Please wait while we load the available qualities...")
 
             # Fetch available qualities only once
             if 'available_qualities' not in user_data:
@@ -179,8 +179,8 @@ def download_media(url, media_type='video', video_quality=None):
         with yt_dlp.YoutubeDL({'quiet': True}) as ydl:
             info = ydl.extract_info(url, download=False)
             formats = info.get('formats', [])
-            # Get available qualities (heights)
-            available_heights = sorted(set(f.get('height', 0) for f in formats if f.get('height')))
+            # Get available qualities (heights) and filter out qualities below 144p
+            available_heights = sorted(set(f.get('height', 0) for f in formats if f.get('height') and f.get('height') >= 144))
             available_qualities = [f"{h}p" for h in available_heights if h > 0]
             # Parse the requested quality (e.g., "720p" -> 720)
             requested_height = int(video_quality.replace('p', '')) if video_quality else None
@@ -234,7 +234,7 @@ def download_media(url, media_type='video', video_quality=None):
     except Exception as e:
         error_message = str(e)
         if "is not a valid URL" in error_message or "Unsupported URL" in error_message:
-            return "❌ تحقق من الرابط. يبدو أن الرابط الذي أدخلته غير صالح.", None
+            return "❌ Invalid URL. Please check the link you entered.", None
         return f"❌ Error during download: {error_message}", None
 
 def main():
