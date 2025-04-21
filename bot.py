@@ -55,7 +55,7 @@ def download_media(url, media_type='video', video_quality=None):
     """Download media from URL with specified quality options"""
     timestamp = time.strftime("%Y%m%d-%H%M%S")
     try:
-        # Define yt-dlp options with custom headers and proxy (optional)
+        # Define yt-dlp options with custom headers
         ydl_opts = {
             'format': 'bestaudio/best' if media_type == 'audio' else f'bestvideo[height<={video_quality}]+bestaudio/best[height<={video_quality}]/best',
             'outtmpl': os.path.join(DOWNLOAD_PATH, f'{media_type}_{timestamp}.%(ext)s'),
@@ -63,8 +63,9 @@ def download_media(url, media_type='video', video_quality=None):
             'quiet': True,
             'http_headers': {
                 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
-            },
-            'proxy': 'http://your-proxy-url:port'  # Optional: Add a proxy if needed
+            }
+            # Uncomment the line below if you need a proxy (replace with valid proxy URL)
+            # 'proxy': 'http://127.0.0.1:8080'
         }
 
         # Handle audio post-processing
