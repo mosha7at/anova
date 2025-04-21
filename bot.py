@@ -55,44 +55,26 @@ def download_media(url, media_type='video', video_quality=None):
     """Download media from URL with specified quality options"""
     timestamp = time.strftime("%Y%m%d-%H%M%S")
     try:
+        # Define yt-dlp options with custom headers and proxy (optional)
+        ydl_opts = {
+            'format': 'bestaudio/best' if media_type == 'audio' else f'bestvideo[height<={video_quality}]+bestaudio/best[height<={video_quality}]/best',
+            'outtmpl': os.path.join(DOWNLOAD_PATH, f'{media_type}_{timestamp}.%(ext)s'),
+            'noplaylist': True,
+            'quiet': True,
+            'http_headers': {
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
+            },
+            'proxy': 'http://your-proxy-url:port'  # Optional: Add a proxy if needed
+        }
+
+        # Handle audio post-processing
         if media_type == 'audio':
-            ydl_opts = {
-                'format': 'bestaudio/best',
-                'outtmpl': os.path.join(DOWNLOAD_PATH, f'audio_{timestamp}.%(ext)s'),
+            ydl_opts.update({
                 'postprocessors': [{
                     'key': 'FFmpegExtractAudio',
                     'preferredcodec': 'mp3',
-                }],
-                'noplaylist': True,
-            }
-        elif media_type == 'video':
-            with yt_dlp.YoutubeDL({'quiet': True}) as ydl:
-                info = ydl.extract_info(url, download=False)
-                formats = info.get('formats', [])
-                available_heights = sorted(set(f.get('height', 0) for f in formats if f.get('height')))
-                
-                requested_height = int(video_quality.replace('p', ''))
-                
-                if available_heights:
-                    higher_qualities = [h for h in available_heights if h >= requested_height]
-                    lower_qualities = [h for h in available_heights if h <= requested_height]
-                    
-                    if higher_qualities:
-                        target_height = min(higher_qualities)
-                    elif lower_qualities:
-                        target_height = max(lower_qualities)
-                    else:
-                        target_height = available_heights[0]
-                else:
-                    target_height = requested_height
-
-            ydl_opts = {
-                'format': f'bestvideo[height<={target_height}]+bestaudio/best[height<={target_height}]/best',
-                'outtmpl': os.path.join(DOWNLOAD_PATH, f'video_{timestamp}.%(ext)s'),
-                'noplaylist': True,
-            }
-        else:
-            return "Error: Invalid media type.", None
+                }]
+            })
 
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
             info_dict = ydl.extract_info(url, download=True)
@@ -103,6 +85,7 @@ def download_media(url, media_type='video', video_quality=None):
                 if os.path.exists(converted_file):
                     return f"Successfully downloaded audio: {info_dict.get('title', 'Unknown')}", converted_file
                 return "Error: Audio conversion failed.", None
+            
             return f"Successfully downloaded: {info_dict.get('title', 'Unknown')}", file_name
 
     except Exception as e:
