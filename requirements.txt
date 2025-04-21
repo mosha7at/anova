@@ -2,3 +2,4 @@
 python-telegram-bot==22.0
 yt-dlp
 requests==2.31.0
+TikTokApi==5.0.0
