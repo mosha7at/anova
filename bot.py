@@ -1,10 +1,9 @@
 import os
 import time
 import json
-import requests
+import yt_dlp
 from telegram import Update, ReplyKeyboardMarkup, ReplyKeyboardRemove
 from telegram.ext import Application, CommandHandler, MessageHandler, filters, ContextTypes
-from TikTokApi import TikTokApi
 
 # Set up download directory
 DOWNLOAD_PATH = os.path.join(os.getcwd(), 'downloads')
@@ -52,24 +51,70 @@ def get_user_count():
     users_data = load_users()
     return users_data['total_count']
 
-def resolve_url(url):
-    """Resolve shortened URLs to their final destination"""
-    try:
-        response = requests.head(url, allow_redirects=True)
-        return response.url
-    except Exception as e:
-        print(f"Error resolving URL: {e}")
-        return None
-
-def download_tiktok_video(video_id):
-    """Download TikTok video using TikTokApi"""
-    api = TikTokApi()
-    video_data = api.video(id=video_id).bytes()
+def download_media(url, media_type='video', video_quality=None):
+    """Download media from URL with specified quality options"""
     timestamp = time.strftime("%Y%m%d-%H%M%S")
-    file_name = os.path.join(DOWNLOAD_PATH, f'tiktok_video_{timestamp}.mp4')
-    with open(file_name, "wb") as f:
-        f.write(video_data)
-    return file_name
+    try:
+        # Extract available formats to determine the best match for the requested quality
+        with yt_dlp.YoutubeDL({'quiet': True}) as ydl:
+            info = ydl.extract_info(url, download=False)
+            formats = info.get('formats', [])
+            available_heights = sorted(set(f.get('height', 0) for f in formats if f.get('height')))
+            
+            # Parse the requested quality (e.g., "720p" -> 720)
+            requested_height = int(video_quality.replace('p', '')) if video_quality else None
+            
+            # Find the closest available height to the requested quality
+            if requested_height:
+                higher_qualities = [h for h in available_heights if h >= requested_height]
+                lower_qualities = [h for h in available_heights if h <= requested_height]
+                
+                if higher_qualities:
+                    target_height = min(higher_qualities)
+                elif lower_qualities:
+                    target_height = max(lower_qualities)
+                else:
+                    target_height = available_heights[0]  # Default to the lowest available quality
+            else:
+                target_height = max(available_heights)  # Default to the highest available quality
+
+        # Define yt-dlp options based on the selected quality
+        ydl_opts = {
+            'format': f'bestvideo[height<={target_height}]+bestaudio/best[height<={target_height}]',
+            'outtmpl': os.path.join(DOWNLOAD_PATH, f'{media_type}_{timestamp}.%(ext)s'),
+            'noplaylist': True,
+            'quiet': True,
+            'http_headers': {
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
+            }
+        }
+
+        # Handle audio post-processing
+        if media_type == 'audio':
+            ydl_opts.update({
+                'postprocessors': [{
+                    'key': 'FFmpegExtractAudio',
+                    'preferredcodec': 'mp3',
+                }]
+            })
+
+        with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+            info_dict = ydl.extract_info(url, download=True)
+            file_name = ydl.prepare_filename(info_dict)
+            
+            if media_type == 'audio':
+                converted_file = os.path.splitext(file_name)[0] + '.mp3'
+                if os.path.exists(converted_file):
+                    return f"Successfully downloaded audio: {info_dict.get('title', 'Unknown')}", converted_file
+                return "Error: Audio conversion failed.", None
+            
+            return f"Successfully downloaded: {info_dict.get('title', 'Unknown')}", file_name
+
+    except Exception as e:
+        error_message = str(e)
+        if "is not a valid URL" in error_message or "Unsupported URL" in error_message:
+            return "❌ تحقق من الرابط. يبدو أن الرابط الذي أدخلته غير صالح.", None
+        return f"❌ Error during download: {error_message}", None
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Start command handler"""
@@ -79,7 +124,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     context.user_data.clear()
     await update.message.reply_text(
         f"Welcome to the Universal Media Downloader, {user.first_name}! 👋\n\n"
-        "Please enter the TikTok video URL you want to download:",
+        "Please enter the URL of the media you want to download:",
         reply_markup=ReplyKeyboardRemove()
     )
 
@@ -106,38 +151,74 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
         return
 
-    # Resolve shortened URLs
-    resolved_url = resolve_url(text)
-    if not resolved_url:
-        await update.message.reply_text("❌ Unable to resolve the provided URL.")
-        return
-
-    # Check if the resolved URL is a valid TikTok link
-    if "tiktok.com" not in resolved_url:
-        await update.message.reply_text("❌ Invalid TikTok URL. Please provide a valid TikTok video link.")
-        return
-
-    # Extract video ID from the resolved URL
-    try:
-        video_id = resolved_url.split("/video/")[1].split("?")[0]
-    except IndexError:
-        await update.message.reply_text("❌ Unable to extract video ID from the provided URL.")
-        return
-
-    status_message = await update.message.reply_text("⏳ Downloading video... Please wait.")
-
-    try:
-        file_path = download_tiktok_video(video_id)
-        await status_message.edit_text("✅ Video downloaded successfully!")
-        if file_path and os.path.exists(file_path):
-            with open(file_path, 'rb') as file:
-                await update.message.reply_video(file)
-            os.remove(file_path)
+    user_data = context.user_data
+    if 'url' not in user_data:
+        user_data['url'] = text
+        keyboard = [["🎧 Audio", "🎬 Video"], ["❌ Cancel"]]
+        reply_markup = ReplyKeyboardMarkup(keyboard, resize_keyboard=True, one_time_keyboard=True)
+        await update.message.reply_text("Choose media type:", reply_markup=reply_markup)
+    
+    elif 'media_type' not in user_data:
+        if text.lower() in ['🎧 audio', 'audio']:
+            user_data['media_type'] = 'audio'
+            status_message = await update.message.reply_text("⏳ Downloading audio... Please wait.")
+            
+            message, file_path = download_media(user_data['url'], media_type='audio')
+            
+            if "Error" in message:
+                await status_message.edit_text(f"❌ {message}")
+            else:
+                await status_message.edit_text(f"✅ {message}")
+                if file_path and os.path.exists(file_path):
+                    with open(file_path, 'rb') as file:
+                        await update.message.reply_audio(file)
+                    os.remove(file_path)
+                else:
+                    await update.message.reply_text("❌ File not found after download. Please try again.")
+            context.user_data.clear()
+        
+        elif text.lower() in ['🎬 video', 'video']:
+            user_data['media_type'] = 'video'
+            keyboard = [
+                ["🎥 144p", "🎥 240p"],
+                ["🎥 360p", "🎥 480p"],
+                ["🎥 720p", "🎥 1080p"],
+                ["❌ Cancel"]
+            ]
+            reply_markup = ReplyKeyboardMarkup(keyboard, resize_keyboard=True, one_time_keyboard=True)
+            await update.message.reply_text("Select video quality:", reply_markup=reply_markup)
+        
         else:
-            await status_message.edit_text("❌ File not found after download. Please try again.")
-    except Exception as e:
-        error_message = str(e)
-        await status_message.edit_text(f"❌ Error during download: {error_message}")
+            await update.message.reply_text("Invalid choice. Please choose '🎧 Audio' or '🎬 Video'.")
+    
+    elif 'video_quality' not in user_data:
+        supported_qualities = ["144p", "240p", "360p", "480p", "720p", "1080p"]
+        if text in [f"🎥 {q}" for q in supported_qualities]:
+            selected_quality = text.replace("🎥 ", "")
+            user_data['video_quality'] = selected_quality
+            
+            status_message = await update.message.reply_text("⏳ Downloading video... Please wait.")
+            
+            message, file_path = download_media(
+                user_data['url'], 
+                media_type='video', 
+                video_quality=selected_quality
+            )
+            
+            if "Error" in message:
+                await status_message.edit_text(f"❌ {message}")
+            else:
+                await status_message.edit_text(f"✅ {message}")
+                if file_path and os.path.exists(file_path):
+                    with open(file_path, 'rb') as file:
+                        await update.message.reply_video(file)
+                    os.remove(file_path)
+                else:
+                    await status_message.edit_text("❌ File not found after download. Please try again.")
+            context.user_data.clear()
+        
+        else:
+            await update.message.reply_text("Invalid video quality choice. Please select a valid option.")
 
 def main():
     """Run the bot"""
