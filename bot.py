@@ -65,6 +65,125 @@ def get_available_qualities(url):
     except Exception as e:
         return []
 
+async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Start command handler"""
+    user = update.effective_user
+    track_user(user.id, user.username, user.first_name)
+    
+    context.user_data.clear()
+    await update.message.reply_text(
+        f"Welcome to the Universal Media Downloader, {user.first_name}! 👋\n\n"
+        "Please enter the URL of the media you want to download:",
+        reply_markup=ReplyKeyboardRemove()
+    )
+
+async def stats(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Admin command to show bot statistics"""
+    user_count = get_user_count()
+    await update.message.reply_text(
+        f"📊 Bot Statistics\n\n"
+        f"Total Users: {user_count}"
+    )
+
+async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Handle incoming messages"""
+    user = update.effective_user
+    track_user(user.id, user.username, user.first_name)
+    
+    text = update.message.text.strip()
+
+    if text.lower() in ['cancel', 'close', '❌ cancel']:
+        context.user_data.clear()
+        await update.message.reply_text(
+            "Operation canceled. Please enter a new URL to start again.",
+            reply_markup=ReplyKeyboardRemove()
+        )
+        return
+
+    user_data = context.user_data
+    if 'url' not in user_data:
+        user_data['url'] = text
+        keyboard = [["🎧 Audio", "🎬 Video"], ["❌ Cancel"]]
+        reply_markup = ReplyKeyboardMarkup(keyboard, resize_keyboard=True, one_time_keyboard=True)
+        await update.message.reply_text("Choose media type:", reply_markup=reply_markup)
+    
+    elif 'media_type' not in user_data:
+        if text.lower() in ['🎧 audio', 'audio']:
+            user_data['media_type'] = 'audio'
+            status_message = await update.message.reply_text("⏳ Downloading audio... Please wait.")
+            
+            message, file_path = download_media(user_data['url'], media_type='audio')
+            
+            if "Error" in message:
+                if "Available qualities" in message:
+                    await status_message.edit_text(message)
+                    return
+                await status_message.edit_text(f"❌ {message}")
+            else:
+                await status_message.edit_text(f"✅ {message}")
+                if file_path and os.path.exists(file_path):
+                    with open(file_path, 'rb') as file:
+                        await update.message.reply_audio(file)
+                    os.remove(file_path)
+                else:
+                    await update.message.reply_text("❌ File not found after download. Please try again.")
+            context.user_data.clear()
+        
+        elif text.lower() in ['🎬 video', 'video']:
+            user_data['media_type'] = 'video'
+            
+            # Fetch available qualities only once
+            if 'available_qualities' not in user_data:
+                available_qualities = get_available_qualities(user_data['url'])
+                if not available_qualities:
+                    await update.message.reply_text("❌ Unable to fetch available qualities. Please try again later.")
+                    return
+                user_data['available_qualities'] = available_qualities
+            
+            # Create keyboard with available qualities
+            keyboard = []
+            for i in range(0, len(user_data['available_qualities']), 2):
+                row = [f"🎥 {user_data['available_qualities'][i]}"]
+                if i + 1 < len(user_data['available_qualities']):
+                    row.append(f"🎥 {user_data['available_qualities'][i + 1]}")
+                keyboard.append(row)
+            keyboard.append(["❌ Cancel"])
+            
+            reply_markup = ReplyKeyboardMarkup(keyboard, resize_keyboard=True, one_time_keyboard=True)
+            await update.message.reply_text("Select video quality:", reply_markup=reply_markup)
+        
+        else:
+            await update.message.reply_text("Invalid choice. Please choose '🎧 Audio' or '🎬 Video'.")
+    
+    elif 'video_quality' not in user_data:
+        available_qualities = user_data.get('available_qualities', [])
+        if text in [f"🎥 {q}" for q in available_qualities]:
+            selected_quality = text.replace("🎥 ", "")
+            user_data['video_quality'] = selected_quality
+            
+            status_message = await update.message.reply_text("⏳ Downloading video... Please wait.")
+            
+            message, file_path = download_media(
+                user_data['url'], 
+                media_type='video', 
+                video_quality=selected_quality
+            )
+            
+            if "Error" in message:
+                await status_message.edit_text(f"❌ {message}")
+            else:
+                await status_message.edit_text(f"✅ {message}")
+                if file_path and os.path.exists(file_path):
+                    with open(file_path, 'rb') as file:
+                        await update.message.reply_video(file)
+                    os.remove(file_path)
+                else:
+                    await status_message.edit_text("❌ File not found after download. Please try again.")
+            context.user_data.clear()
+        
+        else:
+            await update.message.reply_text("Invalid video quality choice. Please select a valid option.")
+
 def download_media(url, media_type='video', video_quality=None):
     """Download media from URL with specified quality options"""
     timestamp = time.strftime("%Y%m%d-%H%M%S")
@@ -133,121 +252,6 @@ def download_media(url, media_type='video', video_quality=None):
         if "is not a valid URL" in error_message or "Unsupported URL" in error_message:
             return "❌ تحقق من الرابط. يبدو أن الرابط الذي أدخلته غير صالح.", None
         return f"❌ Error during download: {error_message}", None
-
-async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Start command handler"""
-    user = update.effective_user
-    track_user(user.id, user.username, user.first_name)
-    
-    context.user_data.clear()
-    await update.message.reply_text(
-        f"Welcome to the Universal Media Downloader, {user.first_name}! 👋\n\n"
-        "Please enter the URL of the media you want to download:",
-        reply_markup=ReplyKeyboardRemove()
-    )
-
-async def stats(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Admin command to show bot statistics"""
-    user_count = get_user_count()
-    await update.message.reply_text(
-        f"📊 Bot Statistics\n\n"
-        f"Total Users: {user_count}"
-    )
-
-async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Handle incoming messages"""
-    user = update.effective_user
-    track_user(user.id, user.username, user.first_name)
-    
-    text = update.message.text.strip()
-
-    if text.lower() in ['cancel', 'close', '❌ cancel']:
-        context.user_data.clear()
-        await update.message.reply_text(
-            "Operation canceled. Please enter a new URL to start again.",
-            reply_markup=ReplyKeyboardRemove()
-        )
-        return
-
-    user_data = context.user_data
-    if 'url' not in user_data:
-        user_data['url'] = text
-        keyboard = [["🎧 Audio", "🎬 Video"], ["❌ Cancel"]]
-        reply_markup = ReplyKeyboardMarkup(keyboard, resize_keyboard=True, one_time_keyboard=True)
-        await update.message.reply_text("Choose media type:", reply_markup=reply_markup)
-    
-    elif 'media_type' not in user_data:
-        if text.lower() in ['🎧 audio', 'audio']:
-            user_data['media_type'] = 'audio'
-            status_message = await update.message.reply_text("⏳ Downloading audio... Please wait.")
-            
-            message, file_path = download_media(user_data['url'], media_type='audio')
-            
-            if "Error" in message:
-                if "Available qualities" in message:
-                    await status_message.edit_text(message)
-                    return
-                await status_message.edit_text(f"❌ {message}")
-            else:
-                await status_message.edit_text(f"✅ {message}")
-                if file_path and os.path.exists(file_path):
-                    with open(file_path, 'rb') as file:
-                        await update.message.reply_audio(file)
-                    os.remove(file_path)
-                else:
-                    await update.message.reply_text("❌ File not found after download. Please try again.")
-            context.user_data.clear()
-        
-        elif text.lower() in ['🎬 video', 'video']:
-            user_data['media_type'] = 'video'
-            available_qualities = get_available_qualities(user_data['url'])
-            if not available_qualities:
-                await update.message.reply_text("❌ Unable to fetch available qualities. Please try again later.")
-                return
-            
-            # Create keyboard with available qualities
-            keyboard = []
-            for i in range(0, len(available_qualities), 2):
-                row = [f"🎥 {available_qualities[i]}"]
-                if i + 1 < len(available_qualities):
-                    row.append(f"🎥 {available_qualities[i + 1]}")
-                keyboard.append(row)
-            keyboard.append(["❌ Cancel"])
-            
-            reply_markup = ReplyKeyboardMarkup(keyboard, resize_keyboard=True, one_time_keyboard=True)
-            await update.message.reply_text("Select video quality:", reply_markup=reply_markup)
-        
-        else:
-            await update.message.reply_text("Invalid choice. Please choose '🎧 Audio' or '🎬 Video'.")
-    
-    elif 'video_quality' not in user_data:
-        available_qualities = get_available_qualities(user_data['url'])
-        if text in [f"🎥 {q}" for q in available_qualities]:
-            selected_quality = text.replace("🎥 ", "")
-            user_data['video_quality'] = selected_quality
-            
-            status_message = await update.message.reply_text("⏳ Downloading video... Please wait.")
-            
-            message, file_path = download_media(
-                user_data['url'], 
-                media_type='video', 
-                video_quality=selected_quality
-            )
-            
-            if "Error" in message:
-                await status_message.edit_text(f"❌ {message}")
-            else:
-                await status_message.edit_text(f"✅ {message}")
-                if file_path and os.path.exists(file_path):
-                    with open(file_path, 'rb') as file:
-                        await update.message.reply_video(file)
-                    os.remove(file_path)
-                else:
-                    await status_message.edit_text("❌ File not found after download. Please try again.")
-            context.user_data.clear()
-        
-        else:
-            await update.message.reply_text("Invalid video quality choice. Please select a valid option.")
 
 def main():
     """Run the bot"""
