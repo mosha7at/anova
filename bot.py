@@ -55,38 +55,16 @@ def download_media(url, media_type='video', video_quality=None):
     """Download media from URL with specified quality options"""
     timestamp = time.strftime("%Y%m%d-%H%M%S")
     try:
-        # Extract available formats to determine the best match for the requested quality
-        with yt_dlp.YoutubeDL({'quiet': True}) as ydl:
-            info = ydl.extract_info(url, download=False)
-            formats = info.get('formats', [])
-            available_heights = sorted(set(f.get('height', 0) for f in formats if f.get('height')))
-            
-            # Parse the requested quality (e.g., "720p" -> 720)
-            requested_height = int(video_quality.replace('p', '')) if video_quality else None
-            
-            # Find the closest available height to the requested quality
-            if requested_height:
-                higher_qualities = [h for h in available_heights if h >= requested_height]
-                lower_qualities = [h for h in available_heights if h <= requested_height]
-                
-                if higher_qualities:
-                    target_height = min(higher_qualities)
-                elif lower_qualities:
-                    target_height = max(lower_qualities)
-                else:
-                    target_height = available_heights[0]  # Default to the lowest available quality
-            else:
-                target_height = max(available_heights)  # Default to the highest available quality
-
-        # Define yt-dlp options based on the selected quality
+        # Define yt-dlp options with custom headers and cookies
         ydl_opts = {
-            'format': f'bestvideo[height<={target_height}]+bestaudio/best[height<={target_height}]',
+            'format': 'bestaudio/best' if media_type == 'audio' else f'bestvideo[height<={video_quality}]+bestaudio/best[height<={video_quality}]/best',
             'outtmpl': os.path.join(DOWNLOAD_PATH, f'{media_type}_{timestamp}.%(ext)s'),
             'noplaylist': True,
             'quiet': True,
             'http_headers': {
                 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
-            }
+            },
+            'cookiefile': 'cookies.txt'  # Add cookies if needed
         }
 
         # Handle audio post-processing
