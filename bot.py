@@ -3,6 +3,8 @@ import time
 import json
 import shutil
 import yt_dlp
+import asyncio
+import functools
 from telegram import Update, ReplyKeyboardMarkup, ReplyKeyboardRemove
 from telegram.ext import Application, CommandHandler, MessageHandler, filters, ContextTypes
 
@@ -61,16 +63,8 @@ def is_playlist(url):
     except Exception:
         return False
 
-def download_media(url, media_type='video', video_quality=None, playlist=False):
-    """
-    Download media from a URL.
-    For playlists, downloads all items into a new directory and returns the directory path.
-    For single files, downloads the file into a new directory and returns the file path.
-    """
-    job_id = f"{time.strftime('%Y%m%d-%H%M%S')}_{os.urandom(4).hex()}"
-    job_path = os.path.join(DOWNLOAD_PATH, job_id)
-    os.makedirs(job_path)
-
+def _blocking_download(url, media_type, video_quality, playlist, job_path):
+    """The actual blocking download logic."""
     try:
         ydl_opts = {
             'outtmpl': os.path.join(job_path, '%(title)s [%(id)s].%(ext)s'),
@@ -108,35 +102,48 @@ def download_media(url, media_type='video', video_quality=None, playlist=False):
                 if not downloaded_files:
                     raise Exception("File not found after download.")
 
-                # For single files, the path is the file itself inside the job_path
                 single_file_path = os.path.join(job_path, downloaded_files[0])
                 
-                # Handle audio conversion naming
                 if media_type == 'audio':
                     base, ext = os.path.splitext(single_file_path)
                     expected_mp3 = base + '.mp3'
                     if os.path.exists(expected_mp3):
-                        # FFMPEG created a new file
                         if single_file_path != expected_mp3 and os.path.exists(single_file_path):
-                           os.remove(single_file_path) # remove original
+                           os.remove(single_file_path)
                         return f"Successfully downloaded audio: {title}", expected_mp3
                     elif ext == '.mp3':
-                        # Original was already mp3
                         return f"Successfully downloaded audio: {title}", single_file_path
                     else:
-                        # Conversion might have failed or file has unexpected extension
-                        # We return the job path to allow cleanup
                         raise Exception("Audio conversion failed or file not found.")
 
                 return f"Successfully downloaded: {title}", single_file_path
 
     except Exception as e:
-        if os.path.exists(job_path):
-            shutil.rmtree(job_path) # Clean up on error
         error_message = str(e)
         if "is not a valid URL" in error_message or "Unsupported URL" in error_message:
             return "❌ تحقق من الرابط. يبدو أن الرابط الذي أدخلته غير صالح.", None
         return f"❌ Error during download: {error_message}", None
+
+async def download_media(url, media_type='video', video_quality=None, playlist=False):
+    """
+    Asynchronously download media from a URL by running the blocking download logic in an executor.
+    """
+    job_id = f"{time.strftime('%Y%m%d-%H%M%S')}_{os.urandom(4).hex()}"
+    job_path = os.path.join(DOWNLOAD_PATH, job_id)
+    os.makedirs(job_path, exist_ok=True)
+
+    loop = asyncio.get_running_loop()
+    
+    # Run the blocking download function in a separate thread
+    func = functools.partial(_blocking_download, url, media_type, video_quality, playlist, job_path)
+    message, result_path = await loop.run_in_executor(None, func)
+
+    # If the download failed, the blocking function returns result_path=None.
+    # In that case, we clean up the job directory.
+    if not result_path and os.path.exists(job_path):
+        await loop.run_in_executor(None, shutil.rmtree, job_path)
+
+    return message, result_path
 
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -177,7 +184,6 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
         return
 
-    # State 1: Start, waiting for URL
     if 'url' not in user_data:
         url = text
         if is_playlist(url):
@@ -198,7 +204,6 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     state = user_data.get('state')
 
-    # State 2: Playlist choice
     if state == 'playlist_choice':
         if "playlist" in text.lower():
             user_data['download_playlist'] = True
@@ -214,20 +219,11 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         user_data['state'] = 'media_type_choice'
         return
 
-    # State 3: Media type choice
     if state == 'media_type_choice':
         if 'audio' in text.lower():
             user_data['media_type'] = 'audio'
-            status_message = await update.message.reply_text("⏳ Downloading... Please wait.", reply_markup=ReplyKeyboardRemove())
-            
-            message, result_path = download_media(
-                user_data['url'],
-                media_type='audio',
-                playlist=user_data.get('download_playlist', False)
-            )
-
-            await handle_download_result(update, status_message, message, result_path, user_data)
-            context.user_data.clear()
+            status_message = await update.message.reply_text("⏳ Your request is being processed...", reply_markup=ReplyKeyboardRemove())
+            asyncio.create_task(run_download_and_upload(update, context, status_message))
 
         elif 'video' in text.lower():
             user_data['media_type'] = 'video'
@@ -243,22 +239,29 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await update.message.reply_text("Invalid choice. Please choose '🎧 Audio' or '🎬 Video'.")
         return
 
-    # State 4: Video quality choice
     if state == 'quality_choice':
         quality = text.replace("🎥 ", "").strip()
         user_data['video_quality'] = quality
-        status_message = await update.message.reply_text("⏳ Downloading... Please wait.", reply_markup=ReplyKeyboardRemove())
+        status_message = await update.message.reply_text("⏳ Your request is being processed...", reply_markup=ReplyKeyboardRemove())
+        asyncio.create_task(run_download_and_upload(update, context, status_message))
+        return
 
-        message, result_path = download_media(
-            user_data['url'],
-            media_type='video',
-            video_quality=quality,
+async def run_download_and_upload(update, context, status_message):
+    """A separate async function to run the download and upload process."""
+    user_data = context.user_data
+    try:
+        await status_message.edit_text("⏳ Downloading... Please wait.")
+        message, result_path = await download_media(
+            user_data.get('url'),
+            media_type=user_data.get('media_type'),
+            video_quality=user_data.get('video_quality'),
             playlist=user_data.get('download_playlist', False)
         )
-        
         await handle_download_result(update, status_message, message, result_path, user_data)
+    except Exception as e:
+        await status_message.edit_text(f"An unexpected error occurred: {e}")
+    finally:
         context.user_data.clear()
-        return
 
 async def handle_download_result(update, status_message, message, result_path, user_data):
     """Helper to process and send downloaded files."""
